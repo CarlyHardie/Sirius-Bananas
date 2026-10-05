@@ -6,6 +6,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 -We are 3rd year engineering students who are new to codeing, Arduino, C++, and using codeing agents. Code using simple logic over clever code
 -please explain everything in simple terms
 
+## Hardware - SparkFun Thing Plus ESP32​
+
+  PlatformIO env: esp32thing_plus​
+
+- XBee: HardwareSerial(2), 9600 baud​
+
+- ICM-20948 IMU, MAX17048 gauge (I2C)​
+
+- Pin map: include/definitions.h ​
+
+## Conventions - Commands: process_main_menu()​
+
+- Telemetry: Name:value,Name:value\n​
+
+- Mirror every XBee message to Serial ​
+
+## Rules - Never change pins without asking​
+
+- Add libraries only via lib_deps​
+
+- No blocking waits in loop()​
+
+- You can't test on hardware: list​
+
+  what I must verify on KesteralSat
 
 
 ## Overview
