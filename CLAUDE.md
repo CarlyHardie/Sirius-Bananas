@@ -7,32 +7,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 -please explain everything in simple terms
 
 ## Hardware - SparkFun Thing Plus ESP32​
-
-  PlatformIO env: esp32thing_plus​
-
-- XBee: HardwareSerial(2), 9600 baud​
-
-- ICM-20948 IMU, MAX17048 gauge (I2C)​
-
-- Pin map: include/definitions.h ​
+PlatformIO env: esp32thing_plus​
+XBee: HardwareSerial(2), 9600 baud​
+ICM-20948 IMU, MAX17048 gauge (I2C)​
+Pin map: include/definitions.h ​
 
 ## Conventions - Commands: process_main_menu()​
-
-- Telemetry: Name:value,Name:value\n​
-
-- Mirror every XBee message to Serial ​
+Telemetry: Name:value,Name:value\n​
+Mirror every XBee message to Serial ​
 
 ## Rules - Never change pins without asking​
-
-- Add libraries only via lib_deps​
-
-- No blocking waits in loop()​
-
-- You can't test on hardware: list​
-
-  what I must verify on KesteralSat
-
-
+Add libraries only via lib_deps​
+No blocking waits in loop()​
+You can't test on hardware: list​
+what I must verify on KesteralSat
 ## Overview
 
 Sirius Bananas holds coursework firmware for the USAFA Astro 331 "KestrelSAT" CubeSat trainer. The root `README.md` is just a title ("Lab 8"); all current code is in `Astro331_Lab7_Code/`, a PlatformIO project (Arduino framework, ESP32-S2, board `sparkfun_esp32s2_thing_plus_c`, env `esp32thing_plus`). Run PlatformIO commands from that directory.
