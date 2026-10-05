@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## About Us
+-We are 3rd year engineering students who are new to codeing, Arduino, C++, and using codeing agents. Code using simple logic over clever code
+-please explain everything in simple terms
+
+
+
 ## Overview
 
 Sirius Bananas holds coursework firmware for the USAFA Astro 331 "KestrelSAT" CubeSat trainer. The root `README.md` is just a title ("Lab 8"); all current code is in `Astro331_Lab7_Code/`, a PlatformIO project (Arduino framework, ESP32-S2, board `sparkfun_esp32s2_thing_plus_c`, env `esp32thing_plus`). Run PlatformIO commands from that directory.
