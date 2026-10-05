@@ -21,3 +21,13 @@ Agent made:   <commits, PR #>
 We changed:   <your edits to the agent's work>
 Verified:     <hardware test and result>
 Issue found:  <anything that failed on the first upload>
+
+## 2026-10-05 · Sun tracking (command 10)
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      requirement, plan (asked for plan before code), answers (INA238 for panel IV, panel faces sun_direction = 180), implement
+Agent made:   sun_tracking_test(), read_sun_sensor(), wrap_180(), INA238 setup, command 10, constants in definitions.h (branch claude/clever-hopper-erjpxr)
+We changed:   <your edits, e.g. gains, signs, INA238 address/shunt after checking your board>
+Verified:     <hardware test and result; the agent could only syntax-check against stubs, no PlatformIO build>
+Issue found:  <anything that failed on the first upload>

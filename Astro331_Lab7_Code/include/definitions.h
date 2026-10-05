@@ -22,4 +22,17 @@
 #define ENCODER_PIN_A           14
 #define ENCODER_PIN_B           32
 
+// Solar panel current/voltage monitor (INA238 on I2C):
+#define INA238_ADDRESS          0x40   // CHECK: I2C address set by the A0/A1 pins on your board
+#define INA238_MAX_CURRENT_A    1.0    // CHECK: largest current you expect to measure (amps)
+#define INA238_SHUNT_OHMS       0.1    // CHECK: shunt resistor value on your board (ohms)
 
+// Sun tracking (command 10):
+#define SUN_TARGET_ANGLE_DEG    180.0  // sun_direction value when the solar panel faces the sun
+#define SUN_TOLERANCE_DEG       45.0   // goal: stay within +/- this angle of the target
+#define SUN_MIN_SIGNAL          200.0  // CHECK: if the 4 sun sensor readings add up to less than this, "no sun"
+#define TRACK_KP                0.005  // wheel command (0 to 1) per degree of sun angle error
+#define TRACK_KD                0.01   // wheel command (0 to 1) per deg/s of spin rate
+#define TRACK_SIGN              1.0    // CHECK: change to -1.0 if the satellite turns AWAY from the sun
+#define TRACK_GYRO_SIGN         1.0    // CHECK: change to -1.0 if spin rate fights the angle error
+#define TRACK_MAX_TIME_MS       60000  // test stops by itself after this long
