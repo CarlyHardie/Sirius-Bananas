@@ -45,7 +45,7 @@ Firmware is a single-threaded Arduino `setup()`/`loop()` program in `src/main.cp
 - Each experiment (`lab6_run_test`, `lab7_run_test_A`, `lab7_run_test_B`) is a **blocking loop** that runs for its whole duration, sampling every 50 ms and logging CSV rows to the SD card. Nothing else runs while a test is in progress. Reads of the command channel inside tests are blocking.
 - Commands: 0 stop wheel, 1 menu, 2 RSSI, 3 LED, 4 battery, 5 manual wheel throttle, 6 Lab 6 test, 7 Lab 7A, 8 Lab 7B, 9 stream wheel speed, 10 sun tracking test (closed loop, `sun_tracking_test()`), 98/99 SD list/print (USB only).
 - Test B's prescribed wheel speed profile lives in `set_speed_test_B()`.
-- Sun tracking (command 10) is a PD controller: error = `sun_direction` minus `SUN_TARGET_ANGLE_DEG` (180, wrapped to ±180), wheel command from `TRACK_KP`/`TRACK_KD` and gyro Z. Gains, signs and the INA238 (panel IV) settings are in `definitions.h`; the signs and INA238 values marked CHECK there are unverified on hardware.
+- Sun tracking (command 10) is a PD controller: error = `sun_direction` minus `SUN_TARGET_ANGLE_DEG` (180, wrapped to ±180), wheel command from `TRACK_KP`/`TRACK_KD` and gyro Z. Gains, signs and the INA238 (panel IV, Adafruit library via `lib_deps`, same shunt settings as Lab 3) are in `definitions.h`; the gain, sign and `SUN_MIN_SIGNAL` values marked CHECK there are unverified on hardware.
 
 Supporting files:
 - `include/definitions.h`: all pin assignments and constants (SD chip select, SPI, XBee, sun sensors, motor PWM, encoder, `CPR`, `MOTOR_VOLTAGE`). Change hardware wiring here. It has no include guard and is included by both `.cpp` files.

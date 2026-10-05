@@ -91,7 +91,7 @@
 #include <ICM_20948.h>                                    // Sparkfun IMU library
 #include <TB9051FTGMotorCarrier.h>                        // Pololu Motor Carrier Library
 #include <ESP32Encoder.h>                                 // Motor encoder library to measure wheel speed
-#include <INA238.h>                                         // INA238 current/voltage monitor (solar panel IV)
+#include <Adafruit_INA238.h>                                 // INA238 current/voltage monitor (solar panel IV)
 
 /*---------------------------------------------------------------------------------------------*/
 // Globals:
@@ -106,7 +106,7 @@ constexpr uint8_t pwm1Pin{MOTOR_PWM_1_PIN}; // PWM1
 constexpr uint8_t pwm2Pin{MOTOR_PWM_2_PIN}; // PWM2
 TB9051FTGMotorCarrier driver{ pwm1Pin, pwm2Pin };// Instantiate TB9051FTGMotorCarrier
 ESP32Encoder enc;
-INA238 ina(INA238_ADDRESS); // Solar panel current/voltage monitor
+Adafruit_INA238 ina = Adafruit_INA238(); // Solar panel current/voltage monitor (same as Lab 3)
 bool ina_ok = false;       // true if the INA238 was found in setup()
 
 // Variables:
@@ -192,8 +192,12 @@ void setup() {
   if (!ina.begin()) {
     Serial.println("[WARN] INA238 not detected. Sun tracking test (cmd 10) will log 0 for panel V and I.");
   } else {
-    ina_ok = (ina.setMaxCurrentShunt(INA238_MAX_CURRENT_A, INA238_SHUNT_OHMS) == 0);
-    Serial.println(ina_ok ? "[INFO] INA238 online." : "[WARN] INA238 found but calibration failed.");
+    ina.setShunt(INA238_SHUNT_OHMS, INA238_MAX_CURRENT_A); // same settings as Lab 3
+    ina.setAveragingCount(INA2XX_COUNT_128);
+    ina.setVoltageConversionTime(INA2XX_TIME_150_us);
+    ina.setCurrentConversionTime(INA2XX_TIME_150_us);
+    ina_ok = true;
+    Serial.println("[INFO] INA238 online.");
   }
   //----------------------------------------------
 
@@ -1372,8 +1376,8 @@ void sun_tracking_test() {
       read_sun_sensor();
       imu_sensor.getAGMT();
       gyro_Z = imu_sensor.gyrZ();
-      float panel_V = ina_ok ? ina.getBusVoltage() : 0.0;
-      float panel_I_mA = ina_ok ? ina.getMilliAmpere() : 0.0;
+      float panel_V = ina_ok ? (ina.getBusVoltage_V() + ina.getShuntVoltage_mV() / 1000.0) : 0.0; // same as Lab 3
+      float panel_I_mA = ina_ok ? ina.getCurrent_mA() : 0.0;
 
       // Control:
       float sun_error = wrap_180(sun_direction - SUN_TARGET_ANGLE_DEG);
@@ -1452,6 +1456,8 @@ void sun_tracking_test() {
         dataFile.flush(); // save file every 10 test points
         Xbee.print("tp:");
         Xbee.println(test_point_count);
+        Serial.print("tp:"); // mirror the XBee message to Serial
+        Serial.println(test_point_count);
       }
     }
   }

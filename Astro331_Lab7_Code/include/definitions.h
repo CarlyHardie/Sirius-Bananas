@@ -23,9 +23,8 @@
 #define ENCODER_PIN_B           32
 
 // Solar panel current/voltage monitor (INA238 on I2C):
-#define INA238_ADDRESS          0x40   // CHECK: I2C address set by the A0/A1 pins on your board
-#define INA238_MAX_CURRENT_A    1.0    // CHECK: largest current you expect to measure (amps)
-#define INA238_SHUNT_OHMS       0.1    // CHECK: shunt resistor value on your board (ohms)
+#define INA238_SHUNT_OHMS       0.015  // same shunt value as Lab 3 (ohms)
+#define INA238_MAX_CURRENT_A    0.5    // same max current as Lab 3 (amps)
 
 // Sun tracking (command 10):
 #define SUN_TARGET_ANGLE_DEG    180.0  // sun_direction value when the solar panel faces the sun
