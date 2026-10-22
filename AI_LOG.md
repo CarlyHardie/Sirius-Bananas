@@ -40,5 +40,5 @@ Prompts:      explain how a PID controller works, change sun tracking to PID (re
 Agent made:   integral term with limit, error zone and reset in sun_tracking_test(); TRACK_KI, TRACK_I_LIMIT, TRACK_I_ZONE_DEG in definitions.h; P/I/D columns in the CSV
 We changed:   <your gains and any other edits>
 Verified:     <hardware test and result; the agent could only syntax-check against stubs>
-Issue found:  <what the overshoot looked like before and after>
+Issue found:  Hardware test (SunTrack_data004.csv, PD, KI = 0) swung about 90 deg past the target each way and was in tolerance 21% of the time. The log showed the D term had the wrong sign (TRACK_GYRO_SIGN was +1.0), so it pushed with the spin; changed to -1.0. After the change: <what the swing looked like>
 

@@ -36,5 +36,5 @@
 #define TRACK_I_LIMIT           0.2    // the integral term can never push the wheel command more than this (0 to 1)
 #define TRACK_I_ZONE_DEG        90.0   // the integral only builds up when the sun error is smaller than this (degrees)
 #define TRACK_SIGN              1.0    // CHECK: change to -1.0 if the satellite turns AWAY from the sun
-#define TRACK_GYRO_SIGN         1.0    // CHECK: change to -1.0 if spin rate fights the angle error
+#define TRACK_GYRO_SIGN         -1.0   // set to -1.0 from SunTrack_data004.csv: with +1.0 the D term pushed WITH the spin instead of braking it. Flip back only if the sat oscillates
 #define TRACK_MAX_TIME_MS       60000  // test stops by itself after this long
