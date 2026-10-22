@@ -52,3 +52,13 @@ We changed:   <your edits>
 Verified:     <hardware test and result>
 Issue found:  data009 showed a steady 24 deg offset (I term was 0) and the sun reading pinned at exactly 90.0 and 180.0 (one channel lit) while the satellite turned about 74 and 90 deg. After the change: <offset left, and raw channel counts where the reading goes flat>
 
+## 2026-10-22 · Sun tracking: stop at the brightest -X reading
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      shared SunTrack_data013.csv (raw channels), asked what the columns mean, asked for the satellite to stop when the -X reading is at its maximum
+Agent made:   APPROACH/SCAN/HOLD modes in sun_tracking_test(), new constants in definitions.h, SUN_MIN_SIGNAL 200 -> 30, five new CSV columns (mode, bright_f, bright_max, angle_since_peak, centered)
+We changed:   <your edits, e.g. TRACK_SCAN_PWM, TRACK_MIN_PWM, TRACK_PEAK_DROP>
+Verified:     <hardware test and result; the agent could only syntax-check and run a toy simulation>
+Issue found:  <what the satellite did: did it scan, pass the peak, come back, and where did it stop?>
+

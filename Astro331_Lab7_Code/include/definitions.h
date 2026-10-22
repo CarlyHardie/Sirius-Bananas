@@ -29,7 +29,7 @@
 // Sun tracking (command 10):
 #define SUN_TARGET_ANGLE_DEG    180.0  // sun_direction value when the solar panel faces the sun
 #define SUN_TOLERANCE_DEG       45.0   // goal: stay within +/- this angle of the target
-#define SUN_MIN_SIGNAL          200.0  // CHECK: if the 4 sun sensor readings add up to less than this, "no sun"
+#define SUN_MIN_SIGNAL          30.0   // CHECK: if the 4 sun sensor readings add up to less than this, "no sun" (dark reads exactly 0 in the logs)
 #define TRACK_KP                0.005  // wheel command (0 to 1) per degree of sun angle error
 #define TRACK_KD                0.01   // wheel command (0 to 1) per deg/s of spin rate
 #define TRACK_KI                0.0005 // wheel command (0 to 1) per (degree x second) of accumulated error. Start here; double if the offset goes away too slowly, halve if it swings. 0.0 = integral OFF
@@ -38,3 +38,14 @@
 #define TRACK_SIGN              1.0    // CHECK: change to -1.0 if the satellite turns AWAY from the sun
 #define TRACK_GYRO_SIGN         -1.0   // set to -1.0 from SunTrack_data004.csv: with +1.0 the D term pushed WITH the spin instead of braking it. Flip back only if the sat oscillates
 #define TRACK_MAX_TIME_MS       60000  // test stops by itself after this long
+
+// Stopping at the brightest point of the -X face (command 10):
+#define TRACK_CENTER_ON_PEAK    1      // 1 = once the -X face sees the light, stop where it reads brightest. 0 = old behavior (error from sun_direction only)
+#define TRACK_PEAK_MIN_COUNT    100.0  // the -X face must read at least this (and be the brightest face) to count as "sees the light"
+#define TRACK_IN_VIEW_SAMPLES   3      // readings in a row needed before we trust that the -X face sees the light
+#define TRACK_OUT_VIEW_SAMPLES  10     // readings in a row without the -X face seeing the light before we give up and go back to the coarse controller
+#define TRACK_BRIGHT_ALPHA      0.3    // smoothing of the -X reading (0 to 1; smaller = smoother but slower)
+#define TRACK_PEAK_DROP         0.93   // we have passed the brightest point when the reading falls below this fraction of the best value seen
+#define TRACK_SCAN_PWM          0.15   // CHECK: gentle wheel command while scanning (the wheel needs about 0.11 or more to start moving)
+#define TRACK_MIN_PWM           0.12   // CHECK: smallest push used to get a resting wheel moving while going back to the brightest point
+#define TRACK_HOLD_DEADZONE_DEG 3.0    // while holding, angle errors smaller than this are ignored
