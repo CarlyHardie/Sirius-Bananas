@@ -1331,7 +1331,7 @@ float wrap_180(float angle_deg) {
 void sun_tracking_test() {
   char file_name[40];
   if (sd_createDataFile(&dataFile, "SunTrack")) {
-    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),panel_V(V),panel_I(mA),sun_X,sun_Y,sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,in_tolerance,p_term,i_term,d_term");
+    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),panel_V(V),panel_I(mA),sun_X,sun_Y,sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,in_tolerance,p_term,i_term,d_term,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count),S_mag(count)");
     dataFile.flush();
     dataFile.getName(file_name, sizeof(file_name));
     Xbee.print("[INFO] Data file created successfully: ");
@@ -1465,7 +1465,17 @@ void sun_tracking_test() {
       dataFile.print(",");
       dataFile.print(i_term, 4);
       dataFile.print(",");
-      dataFile.println(d_term, 4);
+      dataFile.print(d_term, 4);
+      dataFile.print(",");
+      dataFile.print(sun_plusX);
+      dataFile.print(",");
+      dataFile.print(sun_minusX);
+      dataFile.print(",");
+      dataFile.print(sun_plusY);
+      dataFile.print(",");
+      dataFile.print(sun_minusY);
+      dataFile.print(",");
+      dataFile.println(S_mag);
 
       // Print to USB Serial:
       Serial.print("t:");
@@ -1489,7 +1499,9 @@ void sun_tracking_test() {
       Serial.print(",I:");
       Serial.print(i_term, 3);
       Serial.print(",D:");
-      Serial.println(d_term, 3);
+      Serial.print(d_term, 3);
+      Serial.print(",S:");
+      Serial.println(S_mag);
 
       if (test_point_count % 10 == 0) {
         dataFile.flush(); // save file every 10 test points

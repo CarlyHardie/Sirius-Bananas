@@ -42,3 +42,13 @@ We changed:   <your gains and any other edits>
 Verified:     <hardware test and result; the agent could only syntax-check against stubs>
 Issue found:  Hardware test (SunTrack_data004.csv, PD, KI = 0) swung about 90 deg past the target each way and was in tolerance 21% of the time. The log showed the D term had the wrong sign (TRACK_GYRO_SIGN was +1.0), so it pushed with the spin; changed to -1.0. After the change: <what the swing looked like>
 
+## 2026-10-22 · Sun tracking: steady offset and sensor logging
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      shared hardware logs (SunTrack_data007, data009), asked why the satellite stops short and holds off the light
+Agent made:   TRACK_KI set to 0.0005; four raw sun sensor readings and S_mag added to the CSV and S: added to the Serial line
+We changed:   <your edits>
+Verified:     <hardware test and result>
+Issue found:  data009 showed a steady 24 deg offset (I term was 0) and the sun reading pinned at exactly 90.0 and 180.0 (one channel lit) while the satellite turned about 74 and 90 deg. After the change: <offset left, and raw channel counts where the reading goes flat>
+
