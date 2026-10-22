@@ -1311,9 +1311,14 @@ float wrap_180(float angle_deg) {
  * Every 50 ms:
  *  1. Read the sun sensor (sun_direction) and the gyro (spin rate, gyro Z).
  *  2. error = sun_direction - SUN_TARGET_ANGLE_DEG, wrapped to -180...+180 degrees.
- *  3. wheel command = TRACK_SIGN * (TRACK_KP * error + TRACK_KD * TRACK_GYRO_SIGN * gyro_Z),
- *     limited to -1...+1. (P = push toward the sun, D = slow down so we don't overshoot.)
- *  4. If the sun sensor sees almost no light (S_mag < SUN_MIN_SIGNAL), the wheel command is 0.
+ *  3. PID controller. wheel command = TRACK_SIGN * (P + I + D), limited to -1...+1:
+ *       P = TRACK_KP * error                         (push toward the sun, harder when farther away)
+ *       I = TRACK_KI * (sum of error * time)         (slowly adds push if a small error will not go away)
+ *       D = TRACK_KD * TRACK_GYRO_SIGN * gyro_Z      (the spin rate: brake as we speed up, so we don't overshoot)
+ *     The I term is limited to +/- TRACK_I_LIMIT and only builds up when the error is smaller than
+ *     TRACK_I_ZONE_DEG, so it cannot "wind up" during a big turn. With TRACK_KI = 0 this is a PD controller.
+ *  4. If the sun sensor sees almost no light (S_mag < SUN_MIN_SIGNAL), the wheel command is 0
+ *     and the I term is reset.
  *
  * Logs to a new SD file: wheel speed commanded and measured (RPM), panel voltage and current,
  * sun position (sun_X, sun_Y, sun_direction, error), and spin rate (gyro Z).
@@ -1326,7 +1331,7 @@ float wrap_180(float angle_deg) {
 void sun_tracking_test() {
   char file_name[40];
   if (sd_createDataFile(&dataFile, "SunTrack")) {
-    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),panel_V(V),panel_I(mA),sun_X,sun_Y,sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,in_tolerance");
+    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),panel_V(V),panel_I(mA),sun_X,sun_Y,sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,in_tolerance,p_term,i_term,d_term");
     dataFile.flush();
     dataFile.getName(file_name, sizeof(file_name));
     Xbee.print("[INFO] Data file created successfully: ");
@@ -1351,6 +1356,8 @@ void sun_tracking_test() {
   timeNext_testPoint = t0;
   uint32_t timeLastEncMeas = t0;
   int64_t lastCount = enc.getCount();
+  uint32_t timeLastControl = t0 - interval_testPoint; // time of the previous control step (for the I term)
+  float track_integral = 0.0; // sum of (error x time) for the I term, in degree-seconds
   int test_point_count = 0;
   int32_t time_in_range_ms = -1; // time (from start) when the sun first got within tolerance; -1 = not yet
   const char *stop_reason = "time limit reached";
@@ -1383,11 +1390,31 @@ void sun_tracking_test() {
       float sun_error = wrap_180(sun_direction - SUN_TARGET_ANGLE_DEG);
       bool sun_visible = (S_mag >= SUN_MIN_SIGNAL);
       bool in_tolerance = sun_visible && (fabs(sun_error) <= SUN_TOLERANCE_DEG);
+      float dt_ctrl_s = (timeNow - timeLastControl) / 1000.0f; // real time since the last control step
+      timeLastControl = timeNow;
+      float p_term = 0.0, i_term = 0.0, d_term = 0.0;
       float pwm_cmd = 0.0;
       if (sun_visible) {
-        pwm_cmd = TRACK_SIGN * (TRACK_KP * sun_error + TRACK_KD * TRACK_GYRO_SIGN * gyro_Z);
+        // I term: add up error x time, but only when we are fairly close to the sun
+        if (fabs(sun_error) < TRACK_I_ZONE_DEG) {
+          track_integral += sun_error * dt_ctrl_s;
+        } else {
+          track_integral = 0.0; // far from the sun (big turn): start the I term over
+        }
+        // Keep the I term's push below TRACK_I_LIMIT (only needed when TRACK_KI is used)
+        if (TRACK_KI > 0.0) {
+          float integral_max = TRACK_I_LIMIT / TRACK_KI;
+          if (track_integral > integral_max) track_integral = integral_max;
+          if (track_integral < -integral_max) track_integral = -integral_max;
+        }
+        p_term = TRACK_KP * sun_error;
+        i_term = TRACK_KI * track_integral;
+        d_term = TRACK_KD * TRACK_GYRO_SIGN * gyro_Z;
+        pwm_cmd = TRACK_SIGN * (p_term + i_term + d_term);
         if (pwm_cmd > 1.0) pwm_cmd = 1.0;
         if (pwm_cmd < -1.0) pwm_cmd = -1.0;
+      } else {
+        track_integral = 0.0; // no sun: forget the old error
       }
       driver.setOutput(pwm_cmd);
       if (in_tolerance && time_in_range_ms < 0) time_in_range_ms = timeNow - t0;
@@ -1432,7 +1459,13 @@ void sun_tracking_test() {
       dataFile.print(",");
       dataFile.print(pwm_cmd, 4);
       dataFile.print(",");
-      dataFile.println(in_tolerance ? 1 : 0);
+      dataFile.print(in_tolerance ? 1 : 0);
+      dataFile.print(",");
+      dataFile.print(p_term, 4);
+      dataFile.print(",");
+      dataFile.print(i_term, 4);
+      dataFile.print(",");
+      dataFile.println(d_term, 4);
 
       // Print to USB Serial:
       Serial.print("t:");
@@ -1450,7 +1483,13 @@ void sun_tracking_test() {
       Serial.print(",err:");
       Serial.print(sun_error);
       Serial.print(",gZ:");
-      Serial.println(gyro_Z);
+      Serial.print(gyro_Z);
+      Serial.print(",P:");
+      Serial.print(p_term, 3);
+      Serial.print(",I:");
+      Serial.print(i_term, 3);
+      Serial.print(",D:");
+      Serial.println(d_term, 3);
 
       if (test_point_count % 10 == 0) {
         dataFile.flush(); // save file every 10 test points

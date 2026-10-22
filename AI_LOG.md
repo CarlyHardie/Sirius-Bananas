@@ -31,3 +31,14 @@ Agent made:   sun_tracking_test(), read_sun_sensor(), wrap_180(), INA238 setup, 
 We changed:   <your edits, e.g. gains, signs, INA238 address/shunt after checking your board>
 Verified:     <hardware test and result; the agent could only syntax-check against stubs, no PlatformIO build>
 Issue found:  <anything that failed on the first upload>
+
+## 2026-10-22 · Sun tracking: PD to PID
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      explain how a PID controller works, change sun tracking to PID (reason: overshoot seen in hardware test)
+Agent made:   integral term with limit, error zone and reset in sun_tracking_test(); TRACK_KI, TRACK_I_LIMIT, TRACK_I_ZONE_DEG in definitions.h; P/I/D columns in the CSV
+We changed:   <your gains and any other edits>
+Verified:     <hardware test and result; the agent could only syntax-check against stubs>
+Issue found:  <what the overshoot looked like before and after>
+
