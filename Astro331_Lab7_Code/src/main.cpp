@@ -43,6 +43,7 @@
  * | 6   | Run Lab 6 test (Attitude Determination) |
  * | 7   | Run Lab 7 Test A (tabletop static, RW torque measurement) |
  * | 8   | Run Lab 7 Test B (dynamic test with prescribed wheel speed) |
+ * | 10  | Run sun tracking test (closed loop, point solar panel at the sun) |
  * | 98  | SD Card: List files (USB Serial only) |
  * | 99  | SD Card: Print file menu (USB Serial only) |
  * 
@@ -90,6 +91,7 @@
 #include <ICM_20948.h>                                    // Sparkfun IMU library
 #include <TB9051FTGMotorCarrier.h>                        // Pololu Motor Carrier Library
 #include <ESP32Encoder.h>                                 // Motor encoder library to measure wheel speed
+#include <Adafruit_INA238.h>                                 // INA238 current/voltage monitor (solar panel IV)
 
 /*---------------------------------------------------------------------------------------------*/
 // Globals:
@@ -104,6 +106,8 @@ constexpr uint8_t pwm1Pin{MOTOR_PWM_1_PIN}; // PWM1
 constexpr uint8_t pwm2Pin{MOTOR_PWM_2_PIN}; // PWM2
 TB9051FTGMotorCarrier driver{ pwm1Pin, pwm2Pin };// Instantiate TB9051FTGMotorCarrier
 ESP32Encoder enc;
+Adafruit_INA238 ina = Adafruit_INA238(); // Solar panel current/voltage monitor (same as Lab 3)
+bool ina_ok = false;       // true if the INA238 was found in setup()
 
 // Variables:
 uint32_t timeLastCheckForCommand; // time of next Xbee check
@@ -136,6 +140,9 @@ void lab7_run_test_A();
 void lab7_run_test_B();
 float set_speed_test_B(uint32_t t0);
 void stream_RWspeed();
+void read_sun_sensor();
+float wrap_180(float angle_deg);
+void sun_tracking_test();
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // SETUP:
@@ -176,6 +183,21 @@ void setup() {
   } else {
     lipo.quickStart();    // Improves initial SOC accuracy after boot. Returns 0 on success.
     Serial.println("[INFO] MAX17048 online.");
+  }
+  //----------------------------------------------
+
+  //----------------------------------------------
+  // Initialize INA238 (solar panel current/voltage)
+  //----------------------------------------------
+  if (!ina.begin()) {
+    Serial.println("[WARN] INA238 not detected. Sun tracking test (cmd 10) will log 0 for panel V and I.");
+  } else {
+    ina.setShunt(INA238_SHUNT_OHMS, INA238_MAX_CURRENT_A); // same settings as Lab 3
+    ina.setAveragingCount(INA2XX_COUNT_128);
+    ina.setVoltageConversionTime(INA2XX_TIME_150_us);
+    ina.setCurrentConversionTime(INA2XX_TIME_150_us);
+    ina_ok = true;
+    Serial.println("[INFO] INA238 online.");
   }
   //----------------------------------------------
 
@@ -307,6 +329,7 @@ int get_command_from_ground_station()
  * - 6: Run Lab 6 - Attitude Determination test
  * - 7: Run Lab 7 - Test A (tabletop static test)
  * - 8: Run Lab 7 - Test B
+ * - 10: Run sun tracking test (closed loop, reaction wheel)
  * - 98: SD Card - List files (USB Serial only)
  * - 99: SD Card - Print file menu (USB Serial only)
  *
@@ -340,6 +363,7 @@ void process_main_menu() {
       Xbee.print("7 - Lab 7: Run Test A\n");
       Xbee.print("8 - Lab 7: Run Test B\n");
       Xbee.print("9 - Stream RW speed\n");
+      Xbee.print("10 - Sun tracking test\n");
       Xbee.print("98 - SD Card: List Files (USB SERIAL ONLY)\n");
       Xbee.print("99 - SD Card: Print File Menu (USB SERIAL ONLY)\n");
       
@@ -353,6 +377,7 @@ void process_main_menu() {
       Serial.print("7 - Lab 7: Run Test A\n");
       Serial.print("8 - Lab 7: Run Test B\n");
       Serial.print("9 - Stream RW speed\n");
+      Serial.print("10 - Sun tracking test\n");
       Serial.print("98 - SD Card: List Files (USB SERIAL ONLY)\n");
       Serial.print("99 - SD Card: Print File Menu (USB SERIAL ONLY)\n");
       break;
@@ -390,6 +415,10 @@ void process_main_menu() {
 
     case 9:
       stream_RWspeed();
+      break;
+
+    case 10:
+      sun_tracking_test();
       break;
 
     case 98:
@@ -1219,3 +1248,276 @@ void stream_RWspeed()
   }
 } //end stream_RWspeed()
 
+/*---------------------------------------------------------------------------------------------*/
+// Read Sun Sensor:
+/*---------------------------------------------------------------------------------------------*/
+/**
+ * @brief Reads the 4 sun sensor channels and finds the sun direction.
+ *
+ * Averages n_sun_sensor_reads readings per channel, then sets the globals
+ * sun_plusX, sun_minusX, sun_plusY, sun_minusY, S_mag, sun_X, sun_Y and
+ * sun_direction (0 to 360 degrees). Same math as lab7_run_test_B().
+ * If the total signal is zero, sun_X and sun_Y are set to 0 (avoids dividing by zero).
+ */
+void read_sun_sensor() {
+  sun_plusX = 0.0;
+  sun_minusX = 0.0;
+  sun_plusY = 0.0;
+  sun_minusY = 0.0;
+  for (int i = 0; i < n_sun_sensor_reads; i++) {
+    sun_plusX += analogRead(SUN_SENSOR_PLUS_X_PIN);
+    sun_minusX += analogRead(SUN_SENSOR_MINUS_X_PIN);
+    sun_plusY += analogRead(SUN_SENSOR_PLUS_Y_PIN);
+    sun_minusY += analogRead(SUN_SENSOR_MINUS_Y_PIN);
+  }
+  sun_plusX /= n_sun_sensor_reads;
+  sun_minusX /= n_sun_sensor_reads;
+  sun_plusY /= n_sun_sensor_reads;
+  sun_minusY /= n_sun_sensor_reads;
+
+  S_mag = sun_plusX + sun_minusX + sun_plusY + sun_minusY;
+  if (S_mag > 0.0) {
+    sun_X = (sun_plusX - sun_minusX) / S_mag;
+    sun_Y = (sun_plusY - sun_minusY) / S_mag;
+  } else {
+    sun_X = 0.0;
+    sun_Y = 0.0;
+  }
+  sun_direction = (atan2(sun_Y, sun_X) * RAD_TO_DEG);
+  if (sun_direction < 0) {
+    sun_direction += 360; // Adjust to range 0-360
+  }
+}
+
+/*---------------------------------------------------------------------------------------------*/
+// Wrap Angle:
+/*---------------------------------------------------------------------------------------------*/
+/**
+ * @brief Converts an angle in degrees to the range -180 to +180.
+ *        Example: 350 becomes -10, so the satellite takes the short way around.
+ */
+float wrap_180(float angle_deg) {
+  while (angle_deg > 180.0) angle_deg -= 360.0;
+  while (angle_deg < -180.0) angle_deg += 360.0;
+  return angle_deg;
+}
+
+/*---------------------------------------------------------------------------------------------*/
+// Sun Tracking Test (command 10):
+/*---------------------------------------------------------------------------------------------*/
+/**
+ * @brief Closed-loop sun tracking: turns the solar panel toward the sun with the reaction wheel.
+ *
+ * Every 50 ms:
+ *  1. Read the sun sensor (sun_direction) and the gyro (spin rate, gyro Z).
+ *  2. error = sun_direction - SUN_TARGET_ANGLE_DEG, wrapped to -180...+180 degrees.
+ *  3. PID controller. wheel command = TRACK_SIGN * (P + I + D), limited to -1...+1:
+ *       P = TRACK_KP * error                         (push toward the sun, harder when farther away)
+ *       I = TRACK_KI * (sum of error * time)         (slowly adds push if a small error will not go away)
+ *       D = TRACK_KD * TRACK_GYRO_SIGN * gyro_Z      (the spin rate: brake as we speed up, so we don't overshoot)
+ *     The I term is limited to +/- TRACK_I_LIMIT and only builds up when the error is smaller than
+ *     TRACK_I_ZONE_DEG, so it cannot "wind up" during a big turn. With TRACK_KI = 0 this is a PD controller.
+ *  4. If the sun sensor sees almost no light (S_mag < SUN_MIN_SIGNAL), the wheel command is 0
+ *     and the I term is reset.
+ *
+ * Logs to a new SD file: wheel speed commanded and measured (RPM), panel voltage and current,
+ * sun position (sun_X, sun_Y, sun_direction, error), and spin rate (gyro Z).
+ * Ends when the user sends 'X' or after TRACK_MAX_TIME_MS. The wheel is always stopped at the end.
+ *
+ * @note Wheel speed (RPM) is calculated the same way as lab7_run_test_B().
+ * @warning A reaction wheel can only speed up so far. If the wheel command stays at 100%,
+ *          the wheel is saturated and cannot turn the satellite any more.
+ */
+void sun_tracking_test() {
+  char file_name[40];
+  if (sd_createDataFile(&dataFile, "SunTrack")) {
+    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),panel_V(V),panel_I(mA),sun_X,sun_Y,sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,in_tolerance,p_term,i_term,d_term");
+    dataFile.flush();
+    dataFile.getName(file_name, sizeof(file_name));
+    Xbee.print("[INFO] Data file created successfully: ");
+    Xbee.println(file_name);
+    Serial.print("[INFO] Data file created successfully: ");
+    Serial.println(file_name);
+  } else {
+    Xbee.println("[ERROR] Failed to create data file. Aborting test.");
+    Serial.println("[ERROR] Failed to create data file. Aborting test.");
+    return;
+  }
+  Serial.println("[INFO] Ready to start sun tracking test, send any key to begin (send 'X' to stop)...");
+  Xbee.println("[INFO] Ready to start sun tracking test, send any key to begin (send 'X' to stop)...");
+
+  while (!Serial.available() && !Xbee.available()) {} // wait for user to send any key to start test
+  delay(100); // small delay to ensure serial buffer is fully received
+  while (Serial.available()) Serial.read(); // clear serial buffer
+  while (Xbee.available()) Xbee.read();     // clear Xbee buffer
+
+  neopixelWrite(RGB_BUILTIN, 0, 255, 255); // Set to cyan while tracking
+  uint32_t t0 = millis();
+  timeNext_testPoint = t0;
+  uint32_t timeLastEncMeas = t0;
+  int64_t lastCount = enc.getCount();
+  uint32_t timeLastControl = t0 - interval_testPoint; // time of the previous control step (for the I term)
+  float track_integral = 0.0; // sum of (error x time) for the I term, in degree-seconds
+  int test_point_count = 0;
+  int32_t time_in_range_ms = -1; // time (from start) when the sun first got within tolerance; -1 = not yet
+  const char *stop_reason = "time limit reached";
+
+  while (true) {
+    // Check for user input ('X' stops the test):
+    char c = 0;
+    if (Serial.available() > 0) c = Serial.read();
+    else if (Xbee.available() > 0) c = Xbee.read();
+    if (c == 'X' || c == 'x') {
+      stop_reason = "stopped by user";
+      break;
+    }
+
+    uint32_t timeNow = millis();
+    if (timeNow - t0 > TRACK_MAX_TIME_MS) break;
+
+    if (timeNow > timeNext_testPoint) { // Control + logging loop (every interval_testPoint ms)
+      timeNext_testPoint += interval_testPoint;
+      test_point_count++;
+
+      // Sensors:
+      read_sun_sensor();
+      imu_sensor.getAGMT();
+      gyro_Z = imu_sensor.gyrZ();
+      float panel_V = ina_ok ? (ina.getBusVoltage_V() + ina.getShuntVoltage_mV() / 1000.0) : 0.0; // same as Lab 3
+      float panel_I_mA = ina_ok ? ina.getCurrent_mA() : 0.0;
+
+      // Control:
+      float sun_error = wrap_180(sun_direction - SUN_TARGET_ANGLE_DEG);
+      bool sun_visible = (S_mag >= SUN_MIN_SIGNAL);
+      bool in_tolerance = sun_visible && (fabs(sun_error) <= SUN_TOLERANCE_DEG);
+      float dt_ctrl_s = (timeNow - timeLastControl) / 1000.0f; // real time since the last control step
+      timeLastControl = timeNow;
+      float p_term = 0.0, i_term = 0.0, d_term = 0.0;
+      float pwm_cmd = 0.0;
+      if (sun_visible) {
+        // I term: add up error x time, but only when we are fairly close to the sun
+        if (fabs(sun_error) < TRACK_I_ZONE_DEG) {
+          track_integral += sun_error * dt_ctrl_s;
+        } else {
+          track_integral = 0.0; // far from the sun (big turn): start the I term over
+        }
+        // Keep the I term's push below TRACK_I_LIMIT (only needed when TRACK_KI is used)
+        if (TRACK_KI > 0.0) {
+          float integral_max = TRACK_I_LIMIT / TRACK_KI;
+          if (track_integral > integral_max) track_integral = integral_max;
+          if (track_integral < -integral_max) track_integral = -integral_max;
+        }
+        p_term = TRACK_KP * sun_error;
+        i_term = TRACK_KI * track_integral;
+        d_term = TRACK_KD * TRACK_GYRO_SIGN * gyro_Z;
+        pwm_cmd = TRACK_SIGN * (p_term + i_term + d_term);
+        if (pwm_cmd > 1.0) pwm_cmd = 1.0;
+        if (pwm_cmd < -1.0) pwm_cmd = -1.0;
+      } else {
+        track_integral = 0.0; // no sun: forget the old error
+      }
+      driver.setOutput(pwm_cmd);
+      if (in_tolerance && time_in_range_ms < 0) time_in_range_ms = timeNow - t0;
+      if (!sun_visible && test_point_count % 20 == 0) {
+        Serial.println("[CAUTION] No sun detected, wheel command held at 0.");
+        Xbee.println("[CAUTION] No sun detected, wheel command held at 0.");
+      }
+      if (fabs(pwm_cmd) >= 1.0 && test_point_count % 20 == 0) {
+        Serial.println("[CAUTION] Wheel command at 100%, wheel may be saturated.");
+        Xbee.println("[CAUTION] Wheel command at 100%, wheel may be saturated.");
+      }
+
+      // Wheel speed (commanded and measured), same math as lab7_run_test_B():
+      float w_RW_cmd = -pwm_cmd * 1000.0 * MOTOR_VOLTAGE / 12.0;
+      int64_t count = enc.getCount();
+      float dt_s = (timeNow - timeLastEncMeas) / 1000.0f;
+      float rev = (float)(count - lastCount) / ((float)CPR * 10.0);
+      float w_RW_meas = (dt_s > 0) ? (rev / dt_s) * 60.0f : 0.0f;
+      lastCount = count;
+      timeLastEncMeas = timeNow;
+
+      // Log to SD file:
+      dataFile.print(timeNow - t0);
+      dataFile.print(",");
+      dataFile.print(w_RW_cmd);
+      dataFile.print(",");
+      dataFile.print(w_RW_meas);
+      dataFile.print(",");
+      dataFile.print(panel_V, 3);
+      dataFile.print(",");
+      dataFile.print(panel_I_mA, 3);
+      dataFile.print(",");
+      dataFile.print(sun_X, 4);
+      dataFile.print(",");
+      dataFile.print(sun_Y, 4);
+      dataFile.print(",");
+      dataFile.print(sun_direction);
+      dataFile.print(",");
+      dataFile.print(sun_error);
+      dataFile.print(",");
+      dataFile.print(gyro_Z);
+      dataFile.print(",");
+      dataFile.print(pwm_cmd, 4);
+      dataFile.print(",");
+      dataFile.print(in_tolerance ? 1 : 0);
+      dataFile.print(",");
+      dataFile.print(p_term, 4);
+      dataFile.print(",");
+      dataFile.print(i_term, 4);
+      dataFile.print(",");
+      dataFile.println(d_term, 4);
+
+      // Print to USB Serial:
+      Serial.print("t:");
+      Serial.print(timeNow - t0);
+      Serial.print(",w_cmd:");
+      Serial.print(w_RW_cmd);
+      Serial.print(",w_meas:");
+      Serial.print(w_RW_meas);
+      Serial.print(",V:");
+      Serial.print(panel_V, 3);
+      Serial.print(",I_mA:");
+      Serial.print(panel_I_mA, 3);
+      Serial.print(",sDir:");
+      Serial.print(sun_direction);
+      Serial.print(",err:");
+      Serial.print(sun_error);
+      Serial.print(",gZ:");
+      Serial.print(gyro_Z);
+      Serial.print(",P:");
+      Serial.print(p_term, 3);
+      Serial.print(",I:");
+      Serial.print(i_term, 3);
+      Serial.print(",D:");
+      Serial.println(d_term, 3);
+
+      if (test_point_count % 10 == 0) {
+        dataFile.flush(); // save file every 10 test points
+        Xbee.print("tp:");
+        Xbee.println(test_point_count);
+        Serial.print("tp:"); // mirror the XBee message to Serial
+        Serial.println(test_point_count);
+      }
+    }
+  }
+
+  // Always stop the wheel and close the file:
+  driver.setOutput(0);
+  neopixelWrite(RGB_BUILTIN, 0, 255, 0); // back to green (idle)
+  bool closed = dataFile.close();
+  Serial.print("[INFO] Sun tracking test ended (");
+  Serial.print(stop_reason);
+  Serial.print("). File ");
+  Serial.println(closed ? "closed." : "failed to close.");
+  Xbee.print("[INFO] Sun tracking test ended (");
+  Xbee.print(stop_reason);
+  Xbee.print("). File ");
+  Xbee.println(closed ? "closed." : "failed to close.");
+  if (time_in_range_ms >= 0) {
+    Serial.printf("[INFO] Sun first within +/-%.0f deg after %.1f s.\n", SUN_TOLERANCE_DEG, time_in_range_ms / 1000.0);
+    Xbee.printf("[INFO] Sun first within +/-%.0f deg after %.1f s.\n", SUN_TOLERANCE_DEG, time_in_range_ms / 1000.0);
+  } else {
+    Serial.println("[INFO] Sun never got within tolerance during this test.");
+    Xbee.println("[INFO] Sun never got within tolerance during this test.");
+  }
+}
