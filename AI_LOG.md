@@ -72,3 +72,13 @@ We changed:   <your edits, e.g. TRACK_SEARCH_PWM>
 Verified:     <hardware test and result; the agent could only syntax-check>
 Issue found:  In data031 all four channels read 0 for 7.7 s between the +Y and -X faces and the wheel command was 0. After the change: <did it find the -X face, and how long did it take?>
 
+## 2026-10-26 · Sun tracking: search keeps the same wheel command
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      reported it still gets stuck between faces, asked for it to keep going with the same input until a face sees the sun
+Agent made:   search now holds the last wheel command from before the light was lost (floor TRACK_SEARCH_PWM, cap TRACK_SEARCH_MAX_PWM), starts after 2 readings (TRACK_LOST_SAMPLES = 2)
+We changed:   <your edits>
+Verified:     <hardware test and result; the agent could only syntax-check>
+Issue found:  <did it find the next face? how long did it take?>
+

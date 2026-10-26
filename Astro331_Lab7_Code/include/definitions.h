@@ -52,6 +52,7 @@
 
 // Searching when no face sees the light (command 10):
 #define TRACK_SEARCH_WHEN_LOST  1      // 1 = if no face sees the light, keep turning the way we were going until one does. 0 = hold the wheel at 0
-#define TRACK_LOST_SAMPLES      10     // readings in a row with no light before the search starts (10 x 50 ms = 0.5 s)
-#define TRACK_SEARCH_PWM        0.20   // CHECK: gentle wheel command while searching (0.15 did not get the wheel moving in SunTrack_data031)
+#define TRACK_LOST_SAMPLES      2      // readings in a row with no light before the search starts (2 x 50 ms = 0.1 s, so it keeps going almost without a pause)
+#define TRACK_SEARCH_PWM        0.20   // CHECK: smallest wheel command used while searching (0.15 did not get the wheel moving in SunTrack_data031)
+#define TRACK_SEARCH_MAX_PWM    0.50   // the search never pushes harder than this, even if the last command was bigger
 #define TRACK_SEARCH_MAX_MS     20000  // give up after this long without finding light (roughly one full turn, an estimate)
