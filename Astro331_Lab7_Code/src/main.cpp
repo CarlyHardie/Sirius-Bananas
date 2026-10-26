@@ -1332,6 +1332,11 @@ float wrap_180(float angle_deg) {
  *               point is updated.
  * If the -X face stops seeing the light for TRACK_OUT_VIEW_SAMPLES readings, we go back to mode 0.
  *
+ * Searching (TRACK_SEARCH_WHEN_LOST = 1, logged as mode 3). If NO face sees the light (S_mag < SUN_MIN_SIGNAL) for
+ * TRACK_LOST_SAMPLES readings, the satellite keeps turning gently (TRACK_SEARCH_PWM) the way it was already going,
+ * until a face sees the light again. It gives up after TRACK_SEARCH_MAX_MS so it cannot spin forever (for example if
+ * the lamp is off).
+ *
  * Logs to a new SD file: wheel speed commanded and measured (RPM), panel voltage and current,
  * sun position (sun_X, sun_Y, sun_direction, error), and spin rate (gyro Z).
  * Ends when the user sends 'X' or after TRACK_MAX_TIME_MS. The wheel is always stopped at the end.
@@ -1378,6 +1383,11 @@ void sun_tracking_test() {
   float last_motion_sign = 1.0; // gyro direction we were last turning in
   int in_view_count = 0, out_view_count = 0;
   int32_t time_centered_ms = -1; // time (from start) when we first stopped at the brightest point; -1 = not yet
+  int lost_count = 0;            // readings in a row with no light on any face
+  bool search_active = false;    // true while we are searching for the light
+  bool search_gave_up = false;   // true after the search ran out of time
+  float search_sign = 1.0;       // +1 or -1: gyro direction we keep turning in while searching
+  uint32_t search_start_ms = 0;  // when the search started
   int test_point_count = 0;
   int32_t time_in_range_ms = -1; // time (from start) when the sun first got within tolerance; -1 = not yet
   const char *stop_reason = "time limit reached";
@@ -1416,6 +1426,7 @@ void sun_tracking_test() {
       float pwm_cmd = 0.0;
       float angle_error = 0.0; // HOLD mode: how far we are from the brightest point (degrees)
       bool centered = false;   // true when we are stopped at the brightest point
+      bool searching = false;  // true when the wheel command comes from the search for light
 
       // Remember which way we were turning (used to keep scanning the same way)
       if (fabs(gyro_Z) > 3.0) last_motion_sign = (gyro_Z > 0) ? 1.0 : -1.0;
@@ -1462,6 +1473,15 @@ void sun_tracking_test() {
         }
       }
 
+      // Count how long no face has seen the light (a face seeing the light again ends the search)
+      if (sun_visible) {
+        lost_count = 0;
+        search_active = false;
+        search_gave_up = false;
+      } else {
+        lost_count++;
+      }
+
       if (track_mode == 1) {
         // SCAN: keep turning gently the way we were going while the -X reading gets brighter
         track_integral = 0.0;
@@ -1504,12 +1524,29 @@ void sun_tracking_test() {
         pwm_cmd = TRACK_SIGN * (p_term + i_term + d_term);
       } else {
         track_integral = 0.0; // no sun: forget the old error
+        if (TRACK_SEARCH_WHEN_LOST == 1 && lost_count >= TRACK_LOST_SAMPLES) {
+          if (!search_active) { // no light for a while: start the search the way we were going
+            search_active = true;
+            search_sign = last_motion_sign;
+            search_start_ms = timeNow;
+            Serial.println("[INFO] No light on any face: searching.");
+            Xbee.println("[INFO] No light on any face: searching.");
+          }
+          if (timeNow - search_start_ms < TRACK_SEARCH_MAX_MS) {
+            searching = true;
+            pwm_cmd = TRACK_SIGN * search_sign * TRACK_SEARCH_PWM;
+          } else if (!search_gave_up) { // searched long enough: stop the wheel command
+            search_gave_up = true;
+            Serial.println("[CAUTION] Search found no light: wheel command held at 0. Is the lamp on?");
+            Xbee.println("[CAUTION] Search found no light: wheel command held at 0. Is the lamp on?");
+          }
+        }
       }
       if (pwm_cmd > 1.0) pwm_cmd = 1.0;
       if (pwm_cmd < -1.0) pwm_cmd = -1.0;
       driver.setOutput(pwm_cmd);
       if (in_tolerance && time_in_range_ms < 0) time_in_range_ms = timeNow - t0;
-      if (!sun_visible && track_mode == 0 && test_point_count % 20 == 0) {
+      if (!sun_visible && track_mode == 0 && !searching && test_point_count % 20 == 0) {
         Serial.println("[CAUTION] No sun detected, wheel command held at 0.");
         Xbee.println("[CAUTION] No sun detected, wheel command held at 0.");
       }
@@ -1568,7 +1605,7 @@ void sun_tracking_test() {
       dataFile.print(",");
       dataFile.print(S_mag);
       dataFile.print(",");
-      dataFile.print(track_mode);
+      dataFile.print(searching ? 3 : track_mode);
       dataFile.print(",");
       dataFile.print(bright_f);
       dataFile.print(",");
@@ -1604,7 +1641,7 @@ void sun_tracking_test() {
       Serial.print(",S:");
       Serial.print(S_mag);
       Serial.print(",mode:");
-      Serial.print(track_mode);
+      Serial.print(searching ? 3 : track_mode);
       Serial.print(",B:");
       Serial.println(bright_f);
 

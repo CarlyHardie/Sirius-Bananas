@@ -62,3 +62,13 @@ We changed:   <your edits, e.g. TRACK_SCAN_PWM, TRACK_MIN_PWM, TRACK_PEAK_DROP>
 Verified:     <hardware test and result; the agent could only syntax-check and run a toy simulation>
 Issue found:  <what the satellite did: did it scan, pass the peak, come back, and where did it stop?>
 
+## 2026-10-26 · Sun tracking: search when no face sees the light
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      shared SunTrack_data031.csv, asked for the satellite to keep going the way it was until it sees the sun again
+Agent made:   search mode (mode 3) in sun_tracking_test(), TRACK_SEARCH_* constants in definitions.h
+We changed:   <your edits, e.g. TRACK_SEARCH_PWM>
+Verified:     <hardware test and result; the agent could only syntax-check>
+Issue found:  In data031 all four channels read 0 for 7.7 s between the +Y and -X faces and the wheel command was 0. After the change: <did it find the -X face, and how long did it take?>
+

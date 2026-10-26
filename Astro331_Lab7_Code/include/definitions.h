@@ -49,3 +49,9 @@
 #define TRACK_SCAN_PWM          0.15   // CHECK: gentle wheel command while scanning (the wheel needs about 0.11 or more to start moving)
 #define TRACK_MIN_PWM           0.12   // CHECK: smallest push used to get a resting wheel moving while going back to the brightest point
 #define TRACK_HOLD_DEADZONE_DEG 3.0    // while holding, angle errors smaller than this are ignored
+
+// Searching when no face sees the light (command 10):
+#define TRACK_SEARCH_WHEN_LOST  1      // 1 = if no face sees the light, keep turning the way we were going until one does. 0 = hold the wheel at 0
+#define TRACK_LOST_SAMPLES      10     // readings in a row with no light before the search starts (10 x 50 ms = 0.5 s)
+#define TRACK_SEARCH_PWM        0.20   // CHECK: gentle wheel command while searching (0.15 did not get the wheel moving in SunTrack_data031)
+#define TRACK_SEARCH_MAX_MS     20000  // give up after this long without finding light (roughly one full turn, an estimate)
