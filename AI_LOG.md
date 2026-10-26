@@ -42,3 +42,33 @@ We changed:   <your gains and any other edits>
 Verified:     <hardware test and result; the agent could only syntax-check against stubs>
 Issue found:  Hardware test (SunTrack_data004.csv, PD, KI = 0) swung about 90 deg past the target each way and was in tolerance 21% of the time. The log showed the D term had the wrong sign (TRACK_GYRO_SIGN was +1.0), so it pushed with the spin; changed to -1.0. After the change: <what the swing looked like>
 
+## 2026-10-22 · Sun tracking: steady offset and sensor logging
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      shared hardware logs (SunTrack_data007, data009), asked why the satellite stops short and holds off the light
+Agent made:   TRACK_KI set to 0.0005; four raw sun sensor readings and S_mag added to the CSV and S: added to the Serial line
+We changed:   <your edits>
+Verified:     <hardware test and result>
+Issue found:  data009 showed a steady 24 deg offset (I term was 0) and the sun reading pinned at exactly 90.0 and 180.0 (one channel lit) while the satellite turned about 74 and 90 deg. After the change: <offset left, and raw channel counts where the reading goes flat>
+
+## 2026-10-22 · Sun tracking: stop at the brightest -X reading
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      shared SunTrack_data013.csv (raw channels), asked what the columns mean, asked for the satellite to stop when the -X reading is at its maximum
+Agent made:   APPROACH/SCAN/HOLD modes in sun_tracking_test(), new constants in definitions.h, SUN_MIN_SIGNAL 200 -> 30, five new CSV columns (mode, bright_f, bright_max, angle_since_peak, centered)
+We changed:   <your edits, e.g. TRACK_SCAN_PWM, TRACK_MIN_PWM, TRACK_PEAK_DROP>
+Verified:     <hardware test and result; the agent could only syntax-check and run a toy simulation>
+Issue found:  <what the satellite did: did it scan, pass the peak, come back, and where did it stop?>
+
+## 2026-10-26 · Sun tracking: search when no face sees the light
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      shared SunTrack_data031.csv, asked for the satellite to keep going the way it was until it sees the sun again
+Agent made:   search mode (mode 3) in sun_tracking_test(), TRACK_SEARCH_* constants in definitions.h
+We changed:   <your edits, e.g. TRACK_SEARCH_PWM>
+Verified:     <hardware test and result; the agent could only syntax-check>
+Issue found:  In data031 all four channels read 0 for 7.7 s between the +Y and -X faces and the wheel command was 0. After the change: <did it find the -X face, and how long did it take?>
+

@@ -1320,6 +1320,23 @@ float wrap_180(float angle_deg) {
  *  4. If the sun sensor sees almost no light (S_mag < SUN_MIN_SIGNAL), the wheel command is 0
  *     and the I term is reset.
  *
+ * Stopping at the brightest point (TRACK_CENTER_ON_PEAK = 1). The sun sensor only reports WHICH face sees
+ * the light (sun_direction jumps 0/90/180/270), so inside the -X face's view the error above is always 0.
+ * To stop at the middle of that view the code uses how bright the -X face reads. Three modes (logged as "mode"):
+ *   0 APPROACH: the PID above, until the -X face sees the light.
+ *   1 SCAN:     turn gently (TRACK_SCAN_PWM) in the direction we were already going, remembering the
+ *               brightest -X reading (bright_max). Brighter = closer to the middle of the view.
+ *   2 HOLD:     the reading has fallen below TRACK_PEAK_DROP x bright_max, so we passed the brightest point.
+ *               The gyro tells how far we turned since then (angle_since_peak). A PD controller turns us
+ *               back by that angle and holds there. If the reading gets brighter than before, the brightest
+ *               point is updated.
+ * If the -X face stops seeing the light for TRACK_OUT_VIEW_SAMPLES readings, we go back to mode 0.
+ *
+ * Searching (TRACK_SEARCH_WHEN_LOST = 1, logged as mode 3). If NO face sees the light (S_mag < SUN_MIN_SIGNAL) for
+ * TRACK_LOST_SAMPLES readings, the satellite keeps turning gently (TRACK_SEARCH_PWM) the way it was already going,
+ * until a face sees the light again. It gives up after TRACK_SEARCH_MAX_MS so it cannot spin forever (for example if
+ * the lamp is off).
+ *
  * Logs to a new SD file: wheel speed commanded and measured (RPM), panel voltage and current,
  * sun position (sun_X, sun_Y, sun_direction, error), and spin rate (gyro Z).
  * Ends when the user sends 'X' or after TRACK_MAX_TIME_MS. The wheel is always stopped at the end.
@@ -1331,7 +1348,7 @@ float wrap_180(float angle_deg) {
 void sun_tracking_test() {
   char file_name[40];
   if (sd_createDataFile(&dataFile, "SunTrack")) {
-    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),panel_V(V),panel_I(mA),sun_X,sun_Y,sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,in_tolerance,p_term,i_term,d_term");
+    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),panel_V(V),panel_I(mA),sun_X,sun_Y,sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,in_tolerance,p_term,i_term,d_term,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count),S_mag(count),mode,bright_f(count),bright_max(count),angle_since_peak(deg),centered");
     dataFile.flush();
     dataFile.getName(file_name, sizeof(file_name));
     Xbee.print("[INFO] Data file created successfully: ");
@@ -1358,6 +1375,19 @@ void sun_tracking_test() {
   int64_t lastCount = enc.getCount();
   uint32_t timeLastControl = t0 - interval_testPoint; // time of the previous control step (for the I term)
   float track_integral = 0.0; // sum of (error x time) for the I term, in degree-seconds
+  int track_mode = 0;           // 0 = APPROACH, 1 = SCAN, 2 = HOLD (see the function description)
+  float bright_f = 0.0;         // smoothed -X face reading
+  float bright_max = 0.0;       // brightest smoothed -X reading seen in this pass
+  float angle_since_peak = 0.0; // degrees turned (from the gyro) since the brightest reading
+  float scan_sign = 1.0;        // +1 or -1: gyro direction we keep turning in while scanning
+  float last_motion_sign = 1.0; // gyro direction we were last turning in
+  int in_view_count = 0, out_view_count = 0;
+  int32_t time_centered_ms = -1; // time (from start) when we first stopped at the brightest point; -1 = not yet
+  int lost_count = 0;            // readings in a row with no light on any face
+  bool search_active = false;    // true while we are searching for the light
+  bool search_gave_up = false;   // true after the search ran out of time
+  float search_sign = 1.0;       // +1 or -1: gyro direction we keep turning in while searching
+  uint32_t search_start_ms = 0;  // when the search started
   int test_point_count = 0;
   int32_t time_in_range_ms = -1; // time (from start) when the sun first got within tolerance; -1 = not yet
   const char *stop_reason = "time limit reached";
@@ -1394,7 +1424,88 @@ void sun_tracking_test() {
       timeLastControl = timeNow;
       float p_term = 0.0, i_term = 0.0, d_term = 0.0;
       float pwm_cmd = 0.0;
+      float angle_error = 0.0; // HOLD mode: how far we are from the brightest point (degrees)
+      bool centered = false;   // true when we are stopped at the brightest point
+      bool searching = false;  // true when the wheel command comes from the search for light
+
+      // Remember which way we were turning (used to keep scanning the same way)
+      if (fabs(gyro_Z) > 3.0) last_motion_sign = (gyro_Z > 0) ? 1.0 : -1.0;
+
+      // Does the -X face see the light? (it must read enough AND be the brightest of the four faces)
+      if (TRACK_CENTER_ON_PEAK == 1) {
+        float other_max = fmaxf(sun_plusX, fmaxf(sun_plusY, sun_minusY));
+        bool minusX_in_view = (sun_minusX >= TRACK_PEAK_MIN_COUNT) && (sun_minusX >= other_max);
+        if (minusX_in_view) {
+          in_view_count++;
+          out_view_count = 0;
+        } else {
+          out_view_count++;
+          in_view_count = 0;
+        }
+
+        if (track_mode == 0 && in_view_count >= TRACK_IN_VIEW_SAMPLES) { // APPROACH -> SCAN
+          track_mode = 1;
+          bright_f = sun_minusX;
+          bright_max = bright_f;
+          angle_since_peak = 0.0;
+          scan_sign = last_motion_sign;
+          Serial.println("[INFO] -X face sees the light: scanning for the brightest point.");
+          Xbee.println("[INFO] -X face sees the light: scanning for the brightest point.");
+        }
+        if (track_mode != 0 && out_view_count >= TRACK_OUT_VIEW_SAMPLES) { // lost the -X face: back to the coarse controller
+          track_mode = 0;
+          Serial.println("[INFO] -X face lost the light: back to coarse tracking.");
+          Xbee.println("[INFO] -X face lost the light: back to coarse tracking.");
+        }
+        if (track_mode != 0) {
+          bright_f += TRACK_BRIGHT_ALPHA * (sun_minusX - bright_f); // smooth the reading
+          if (bright_f > bright_max) { // new brightest point: measure the angle from here
+            bright_max = bright_f;
+            angle_since_peak = 0.0;
+          } else {
+            angle_since_peak += gyro_Z * dt_ctrl_s; // degrees turned since the brightest point
+          }
+          if (track_mode == 1 && bright_f < TRACK_PEAK_DROP * bright_max) { // SCAN -> HOLD: we passed the peak
+            track_mode = 2;
+            Serial.println("[INFO] Passed the brightest point: going back to it.");
+            Xbee.println("[INFO] Passed the brightest point: going back to it.");
+          }
+        }
+      }
+
+      // Count how long no face has seen the light (a face seeing the light again ends the search)
       if (sun_visible) {
+        lost_count = 0;
+        search_active = false;
+        search_gave_up = false;
+      } else {
+        lost_count++;
+      }
+
+      if (track_mode == 1) {
+        // SCAN: keep turning gently the way we were going while the -X reading gets brighter
+        track_integral = 0.0;
+        pwm_cmd = TRACK_SIGN * scan_sign * TRACK_SCAN_PWM;
+      } else if (track_mode == 2) {
+        // HOLD: turn back by the angle we passed the brightest point, then stay (positive gyro lowers
+        // sun_direction, so the error is the opposite of the angle turned since the peak)
+        track_integral = 0.0;
+        angle_error = -angle_since_peak;
+        p_term = TRACK_KP * angle_error;
+        d_term = TRACK_KD * TRACK_GYRO_SIGN * gyro_Z;
+        pwm_cmd = TRACK_SIGN * (p_term + d_term);
+        // The wheel will not start moving on a tiny command: if we are off the peak and standing still, give it a push
+        if (fabs(angle_error) > TRACK_HOLD_DEADZONE_DEG && fabs(pwm_cmd) < TRACK_MIN_PWM && fabs(gyro_Z) < 3.0) {
+          pwm_cmd = ((TRACK_SIGN * angle_error) >= 0 ? 1.0 : -1.0) * TRACK_MIN_PWM;
+        }
+        centered = (fabs(angle_error) <= TRACK_HOLD_DEADZONE_DEG) && (fabs(gyro_Z) < 3.0) && (bright_f >= 0.95 * bright_max);
+        if (centered && time_centered_ms < 0) {
+          time_centered_ms = timeNow - t0;
+          Serial.println("[INFO] Stopped at the brightest -X point.");
+          Xbee.println("[INFO] Stopped at the brightest -X point.");
+        }
+      } else if (sun_visible) {
+        // APPROACH: PID on the sun direction error
         // I term: add up error x time, but only when we are fairly close to the sun
         if (fabs(sun_error) < TRACK_I_ZONE_DEG) {
           track_integral += sun_error * dt_ctrl_s;
@@ -1411,14 +1522,31 @@ void sun_tracking_test() {
         i_term = TRACK_KI * track_integral;
         d_term = TRACK_KD * TRACK_GYRO_SIGN * gyro_Z;
         pwm_cmd = TRACK_SIGN * (p_term + i_term + d_term);
-        if (pwm_cmd > 1.0) pwm_cmd = 1.0;
-        if (pwm_cmd < -1.0) pwm_cmd = -1.0;
       } else {
         track_integral = 0.0; // no sun: forget the old error
+        if (TRACK_SEARCH_WHEN_LOST == 1 && lost_count >= TRACK_LOST_SAMPLES) {
+          if (!search_active) { // no light for a while: start the search the way we were going
+            search_active = true;
+            search_sign = last_motion_sign;
+            search_start_ms = timeNow;
+            Serial.println("[INFO] No light on any face: searching.");
+            Xbee.println("[INFO] No light on any face: searching.");
+          }
+          if (timeNow - search_start_ms < TRACK_SEARCH_MAX_MS) {
+            searching = true;
+            pwm_cmd = TRACK_SIGN * search_sign * TRACK_SEARCH_PWM;
+          } else if (!search_gave_up) { // searched long enough: stop the wheel command
+            search_gave_up = true;
+            Serial.println("[CAUTION] Search found no light: wheel command held at 0. Is the lamp on?");
+            Xbee.println("[CAUTION] Search found no light: wheel command held at 0. Is the lamp on?");
+          }
+        }
       }
+      if (pwm_cmd > 1.0) pwm_cmd = 1.0;
+      if (pwm_cmd < -1.0) pwm_cmd = -1.0;
       driver.setOutput(pwm_cmd);
       if (in_tolerance && time_in_range_ms < 0) time_in_range_ms = timeNow - t0;
-      if (!sun_visible && test_point_count % 20 == 0) {
+      if (!sun_visible && track_mode == 0 && !searching && test_point_count % 20 == 0) {
         Serial.println("[CAUTION] No sun detected, wheel command held at 0.");
         Xbee.println("[CAUTION] No sun detected, wheel command held at 0.");
       }
@@ -1465,7 +1593,27 @@ void sun_tracking_test() {
       dataFile.print(",");
       dataFile.print(i_term, 4);
       dataFile.print(",");
-      dataFile.println(d_term, 4);
+      dataFile.print(d_term, 4);
+      dataFile.print(",");
+      dataFile.print(sun_plusX);
+      dataFile.print(",");
+      dataFile.print(sun_minusX);
+      dataFile.print(",");
+      dataFile.print(sun_plusY);
+      dataFile.print(",");
+      dataFile.print(sun_minusY);
+      dataFile.print(",");
+      dataFile.print(S_mag);
+      dataFile.print(",");
+      dataFile.print(searching ? 3 : track_mode);
+      dataFile.print(",");
+      dataFile.print(bright_f);
+      dataFile.print(",");
+      dataFile.print(bright_max);
+      dataFile.print(",");
+      dataFile.print(angle_since_peak);
+      dataFile.print(",");
+      dataFile.println(centered ? 1 : 0);
 
       // Print to USB Serial:
       Serial.print("t:");
@@ -1489,7 +1637,13 @@ void sun_tracking_test() {
       Serial.print(",I:");
       Serial.print(i_term, 3);
       Serial.print(",D:");
-      Serial.println(d_term, 3);
+      Serial.print(d_term, 3);
+      Serial.print(",S:");
+      Serial.print(S_mag);
+      Serial.print(",mode:");
+      Serial.print(searching ? 3 : track_mode);
+      Serial.print(",B:");
+      Serial.println(bright_f);
 
       if (test_point_count % 10 == 0) {
         dataFile.flush(); // save file every 10 test points
@@ -1513,6 +1667,10 @@ void sun_tracking_test() {
   Xbee.print(stop_reason);
   Xbee.print("). File ");
   Xbee.println(closed ? "closed." : "failed to close.");
+  if (time_centered_ms >= 0) {
+    Serial.printf("[INFO] Stopped at the brightest -X point after %.1f s.\n", time_centered_ms / 1000.0);
+    Xbee.printf("[INFO] Stopped at the brightest -X point after %.1f s.\n", time_centered_ms / 1000.0);
+  }
   if (time_in_range_ms >= 0) {
     Serial.printf("[INFO] Sun first within +/-%.0f deg after %.1f s.\n", SUN_TOLERANCE_DEG, time_in_range_ms / 1000.0);
     Xbee.printf("[INFO] Sun first within +/-%.0f deg after %.1f s.\n", SUN_TOLERANCE_DEG, time_in_range_ms / 1000.0);
