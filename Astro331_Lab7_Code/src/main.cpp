@@ -1327,6 +1327,10 @@ float wrap_180(float angle_deg) {
  *   1 SCAN:     turn gently (TRACK_SCAN_PWM) in the direction we were already going, remembering the
  *               brightest -X reading (bright_max). Brighter = closer to the middle of the view.
  *   2 HOLD:     the reading has fallen below TRACK_PEAK_DROP x bright_max, so we passed the brightest point.
+ *               (This only counts if bright_max is at least TRACK_PEAK_MIN_FRACTION of the brightest face reading
+ *               seen in the run and the satellite is turning faster than TRACK_PEAK_MIN_RATE_DPS. Otherwise the
+ *               dip is just noise at the dim edge of the view, and we keep scanning.) While holding, an I term
+ *               (TRACK_HOLD_KI) adds up the angle error so the push grows if the satellite stalls short.
  *               The gyro tells how far we turned since then (angle_since_peak). A PD controller turns us
  *               back by that angle and holds there. If the reading gets brighter than before, the brightest
  *               point is updated.
@@ -1388,6 +1392,8 @@ void sun_tracking_test() {
   bool search_active = false;    // true while we are searching for the light
   bool search_gave_up = false;   // true after the search ran out of time
   float last_valid_pwm = 0.0;    // the last wheel command given while a face could see the light
+  float run_peak_any = 0.0;      // brightest reading on ANY face so far in this run (counts)
+  float hold_integral = 0.0;     // HOLD mode: angle error added up over time (degree-seconds)
   float search_pwm = 0.0;        // the wheel command held during the search
   uint32_t search_start_ms = 0;  // when the search started
   int test_point_count = 0;
@@ -1430,6 +1436,10 @@ void sun_tracking_test() {
       bool centered = false;   // true when we are stopped at the brightest point
       bool searching = false;  // true when the wheel command comes from the search for light
 
+      // Brightest reading on any face so far (a real peak should be a good fraction of this)
+      float brightest_face = fmaxf(fmaxf(sun_plusX, sun_minusX), fmaxf(sun_plusY, sun_minusY));
+      if (brightest_face > run_peak_any) run_peak_any = brightest_face;
+
       // Remember which way we were turning (used to keep scanning the same way)
       if (fabs(gyro_Z) > 3.0) last_motion_sign = (gyro_Z > 0) ? 1.0 : -1.0;
 
@@ -1467,8 +1477,12 @@ void sun_tracking_test() {
           } else {
             angle_since_peak += gyro_Z * dt_ctrl_s; // degrees turned since the brightest point
           }
-          if (track_mode == 1 && bright_f < TRACK_PEAK_DROP * bright_max) { // SCAN -> HOLD: we passed the peak
+          // SCAN -> HOLD: we passed the peak. A dip only counts if the "peak" was a real one (bright enough compared
+          // with the brightest face reading in the run) and the satellite is really turning, not stalled at a dim edge
+          if (track_mode == 1 && bright_f < TRACK_PEAK_DROP * bright_max &&
+              bright_max >= TRACK_PEAK_MIN_FRACTION * run_peak_any && fabs(gyro_Z) > TRACK_PEAK_MIN_RATE_DPS) {
             track_mode = 2;
+            hold_integral = 0.0;
             Serial.println("[INFO] Passed the brightest point: going back to it.");
             Xbee.println("[INFO] Passed the brightest point: going back to it.");
           }
@@ -1493,9 +1507,21 @@ void sun_tracking_test() {
         // sun_direction, so the error is the opposite of the angle turned since the peak)
         track_integral = 0.0;
         angle_error = -angle_since_peak;
+        // I term: add up the angle error, so the push keeps growing if we stall short of the brightest point
+        if (fabs(angle_error) > TRACK_HOLD_DEADZONE_DEG) {
+          hold_integral += angle_error * dt_ctrl_s;
+        } else {
+          hold_integral = 0.0; // close enough: start over
+        }
+        if (TRACK_HOLD_KI > 0.0) { // keep the I term's push below TRACK_I_LIMIT
+          float hold_integral_max = TRACK_I_LIMIT / TRACK_HOLD_KI;
+          if (hold_integral > hold_integral_max) hold_integral = hold_integral_max;
+          if (hold_integral < -hold_integral_max) hold_integral = -hold_integral_max;
+        }
         p_term = TRACK_KP * angle_error;
+        i_term = TRACK_HOLD_KI * hold_integral;
         d_term = TRACK_KD * TRACK_GYRO_SIGN * gyro_Z;
-        pwm_cmd = TRACK_SIGN * (p_term + d_term);
+        pwm_cmd = TRACK_SIGN * (p_term + i_term + d_term);
         // The wheel will not start moving on a tiny command: if we are off the peak and standing still, give it a push
         if (fabs(angle_error) > TRACK_HOLD_DEADZONE_DEG && fabs(pwm_cmd) < TRACK_MIN_PWM && fabs(gyro_Z) < 3.0) {
           pwm_cmd = ((TRACK_SIGN * angle_error) >= 0 ? 1.0 : -1.0) * TRACK_MIN_PWM;

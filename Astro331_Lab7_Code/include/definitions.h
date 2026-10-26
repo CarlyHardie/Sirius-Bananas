@@ -46,13 +46,16 @@
 #define TRACK_OUT_VIEW_SAMPLES  10     // readings in a row without the -X face seeing the light before we give up and go back to the coarse controller
 #define TRACK_BRIGHT_ALPHA      0.3    // smoothing of the -X reading (0 to 1; smaller = smoother but slower)
 #define TRACK_PEAK_DROP         0.93   // we have passed the brightest point when the reading falls below this fraction of the best value seen
-#define TRACK_SCAN_PWM          0.15   // CHECK: gentle wheel command while scanning (the wheel needs about 0.11 or more to start moving)
+#define TRACK_SCAN_PWM          0.28   // CHECK: wheel command while scanning. SunTrack_data038: 0.15 left the satellite turning ~2 dps; about 0.28 turned it ~17 dps
 #define TRACK_MIN_PWM           0.12   // CHECK: smallest push used to get a resting wheel moving while going back to the brightest point
 #define TRACK_HOLD_DEADZONE_DEG 3.0    // while holding, angle errors smaller than this are ignored
+#define TRACK_HOLD_KI           0.002  // CHECK: while holding, wheel command per (degree x second) of angle error added up, so the push grows if we stall short of the brightest point
+#define TRACK_PEAK_MIN_FRACTION 0.30   // "passed the brightest point" only counts if the best -X reading is at least this fraction of the brightest face reading seen in the run
+#define TRACK_PEAK_MIN_RATE_DPS 5.0    // ...and only while the satellite is really turning (more than this many deg/s)
 
 // Searching when no face sees the light (command 10):
 #define TRACK_SEARCH_WHEN_LOST  1      // 1 = if no face sees the light, keep turning the way we were going until one does. 0 = hold the wheel at 0
 #define TRACK_LOST_SAMPLES      2      // readings in a row with no light before the search starts (2 x 50 ms = 0.1 s, so it keeps going almost without a pause)
-#define TRACK_SEARCH_PWM        0.20   // CHECK: smallest wheel command used while searching (0.15 did not get the wheel moving in SunTrack_data031)
+#define TRACK_SEARCH_PWM        0.28   // CHECK: smallest wheel command used while searching (same reason as TRACK_SCAN_PWM)
 #define TRACK_SEARCH_MAX_PWM    0.50   // the search never pushes harder than this, even if the last command was bigger
 #define TRACK_SEARCH_MAX_MS     20000  // give up after this long without finding light (roughly one full turn, an estimate)

@@ -82,3 +82,13 @@ We changed:   <your edits>
 Verified:     <hardware test and result; the agent could only syntax-check>
 Issue found:  <did it find the next face? how long did it take?>
 
+## 2026-10-26 · Sun tracking: stuck between the +Y and -X faces
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      shared SunTrack_data038.csv, asked to analyze it and then to make the three fixes
+Agent made:   TRACK_SCAN_PWM and TRACK_SEARCH_PWM 0.15/0.20 -> 0.28; a real-peak rule before SCAN -> HOLD (TRACK_PEAK_MIN_FRACTION, TRACK_PEAK_MIN_RATE_DPS); an I term in HOLD (TRACK_HOLD_KI)
+We changed:   <your edits>
+Verified:     <hardware test and result; the agent could only syntax-check and replay the rule on logged data>
+Issue found:  data038 looped 0 -> 1 -> 2 -> 0 fourteen times in 27 s. Scan (0.15) turned the satellite only ~2 dps, and a 25 count dip at ~300 counts (9% of the brightest face) was taken for the peak. After the change: <did it get through the -X view and stop at the brightest point?>
+
