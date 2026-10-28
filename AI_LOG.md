@@ -132,3 +132,13 @@ We changed:   <your edits>
 Verified:     <does the CSV have 19 columns and does the simulator overlay still read it?>
 Issue found:  <anything>
 
+## 2026-10-28 · Scan, hold and search in the simulator
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked to add the scan, hold and search modes to the simulation
+Agent made:   ported the firmware control step into Simulation/SunTrackSim.html (same variable names and constants), a mode plot, mode/brightness columns in the CSV export and overlay, optional gyro noise, TRACK_SIGN choice
+We changed:   <your edits>
+Verified:     <compare the mode plot with a test CSV overlay; the agent ran the logic in Node and looked at one screenshot>
+Issue found:  In the simulation, scan/hold/search ends about 5 deg from the lamp from every start angle tried (PID alone: 32 deg). With a very dim lamp the -X face never reaches TRACK_PEAK_MIN_COUNT, scan never starts and it loops between approach and search at the edge of the view.
+

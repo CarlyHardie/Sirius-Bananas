@@ -79,7 +79,7 @@ details > summary { cursor: pointer; padding: 2px 0; }
 details[open] > summary { margin-bottom: 8px; }
 details .group { gap: 8px; }
 .field { display: grid; grid-template-columns: minmax(0, 1fr) 96px; align-items: center; gap: 4px 8px; }
-.field label { font-size: 0.86rem; color: var(--ink); }
+.field label { font-size: 0.86rem; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
 .field label small { display: block; color: var(--muted); font-size: 0.74rem; }
 .field input, .field select {
   width: 100%; font: 500 0.86rem var(--font-data); font-variant-numeric: tabular-nums; color: var(--ink);
@@ -106,8 +106,8 @@ button:disabled { opacity: 0.5; cursor: default; }
 .play .clock { font: 500 0.95rem var(--font-data); font-variant-numeric: tabular-nums; margin-left: auto; }
 .play label { font-size: 0.82rem; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
 .play select { font: 0.82rem var(--font-body); background: var(--field); color: var(--ink); border: 1px solid var(--rule); border-radius: 5px; padding: 4px 6px; }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
-.stat { background: var(--panel); padding: 8px 10px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.stat { background: var(--panel); padding: 8px 10px; box-shadow: 0 0 0 0.5px var(--rule); }
 .stat dt { font-size: 0.72rem; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
 .stat dd { margin: 2px 0 0; font: 500 1rem var(--font-data); font-variant-numeric: tabular-nums; }
 .plot { padding: 8px 10px 6px; }
@@ -116,6 +116,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .plot h3 span { color: var(--muted); font-weight: 500; }
 .readout { font: 0.76rem var(--font-data); font-variant-numeric: tabular-nums; color: var(--ink-2); min-height: 1.2em; }
 .plot canvas { width: 100%; height: 150px; display: block; touch-action: pan-y; cursor: crosshair; }
+.plot canvas.short { height: 96px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.78rem; color: var(--ink-2); margin-top: 2px; }
 .legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid currentColor; vertical-align: middle; margin-right: 5px; }
 .legend i.dash { border-top-style: dashed; }
@@ -127,7 +128,7 @@ input[type="file"] { display: none; }
 
 <div class="top">
   <h1>KestrelSAT <span>pointing simulator</span></h1>
-  <p>Set the satellite, wheel and controller values, press Start, and compare the result with a SunTrack CSV from a real test. It simulates the PID controller in command 10 (mode 0). Scan, hold and search are not modelled.</p>
+  <p>Set the satellite, wheel and controller values, press Start, and compare the result with a SunTrack CSV from a real test. It runs the same logic as command 10: the PID (mode 0), scan (1), hold (2) and search (3), with the constants from definitions.h.</p>
 </div>
 
 <div class="app">
@@ -135,6 +136,10 @@ input[type="file"] { display: none; }
     <div class="group" id="g-body"><h2>Satellite and wheel</h2></div>
     <div class="group" id="g-ctrl"><h2>Controller (same units as definitions.h)</h2></div>
     <div class="group" id="g-ic"><h2>Initial conditions and run</h2></div>
+    <details id="modes">
+      <summary>Scan, hold and search (definitions.h)</summary>
+      <div class="group" id="g-modes"></div>
+    </details>
     <details id="adv">
       <summary>Sun sensor and motor</summary>
       <div class="group" id="g-adv"></div>
@@ -170,6 +175,7 @@ input[type="file"] { display: none; }
     <div class="card plot"><header><h3>Satellite spin rate <span>deg/s</span></h3><span class="readout" id="ro-rate"></span></header><canvas id="p-rate"></canvas><div class="legend" id="lg-rate"></div></div>
     <div class="card plot"><header><h3>Reaction wheel speed <span>RPM</span></h3><span class="readout" id="ro-wheel"></span></header><canvas id="p-wheel"></canvas><div class="legend" id="lg-wheel"></div></div>
     <div class="card plot"><header><h3>Wheel command <span>pwm, −1 to 1</span></h3><span class="readout" id="ro-pwm"></span></header><canvas id="p-pwm"></canvas><div class="legend" id="lg-pwm"></div></div>
+    <div class="card plot"><header><h3>Mode <span>0 approach · 1 scan · 2 hold · 3 search</span></h3><span class="readout" id="ro-mode"></span></header><canvas id="p-mode" class="short"></canvas><div class="legend" id="lg-mode"></div></div>
     <div class="card plot">
       <div class="data-row">
         <button type="button" class="primary" id="dlBtn">Download data (CSV)</button>
@@ -197,6 +203,27 @@ const PARAMS = [
   { g: "g-ic", id: "rate0", label: "Initial spin rate", unit: "deg/s", def: 0, min: -360, max: 360, step: 1 },
   { g: "g-ic", id: "runtime", label: "Run time", unit: "s", def: 60, min: 1, max: 600, step: 1 },
   { g: "g-ic", id: "tol", label: "Tolerance", unit: "± deg", def: 45, min: 0.5, max: 180, step: 0.5 },
+  { g: "g-modes", id: "center", label: "TRACK_CENTER_ON_PEAK", type: "select", def: "1",
+    options: [["1", "1: scan and hold on"], ["0", "0: PID only"]] },
+  { g: "g-modes", id: "peakMin", label: "TRACK_PEAK_MIN_COUNT", unit: "counts", def: 100, min: 0, max: 4095, step: 1 },
+  { g: "g-modes", id: "inN", label: "TRACK_IN_VIEW_SAMPLES", unit: "readings", def: 3, min: 1, max: 100, step: 1 },
+  { g: "g-modes", id: "outN", label: "TRACK_OUT_VIEW_SAMPLES", unit: "readings", def: 10, min: 1, max: 100, step: 1 },
+  { g: "g-modes", id: "alpha", label: "TRACK_BRIGHT_ALPHA", unit: "0 to 1", def: 0.3, min: 0.01, max: 1, step: 0.01 },
+  { g: "g-modes", id: "drop", label: "TRACK_PEAK_DROP", unit: "fraction of best", def: 0.93, min: 0.1, max: 0.999, step: 0.01 },
+  { g: "g-modes", id: "peakFrac", label: "TRACK_PEAK_MIN_FRACTION", unit: "of brightest face", def: 0.30, min: 0, max: 1, step: 0.01 },
+  { g: "g-modes", id: "peakRate", label: "TRACK_PEAK_MIN_RATE_DPS", unit: "deg/s", def: 5, min: 0, max: 100, step: 0.5 },
+  { g: "g-modes", id: "scanPwm", label: "TRACK_SCAN_PWM", unit: "pwm", def: 0.28, min: 0, max: 1, step: 0.01 },
+  { g: "g-modes", id: "minPwm", label: "TRACK_MIN_PWM", unit: "pwm", def: 0.12, min: 0, max: 1, step: 0.01 },
+  { g: "g-modes", id: "dead", label: "TRACK_HOLD_DEADZONE_DEG", unit: "deg", def: 3, min: 0, max: 45, step: 0.5 },
+  { g: "g-modes", id: "holdKi", label: "TRACK_HOLD_KI", unit: "per deg·s", def: 0.002, min: 0, max: 1, step: 0.0005 },
+  { g: "g-modes", id: "search", label: "TRACK_SEARCH_WHEN_LOST", type: "select", def: "1",
+    options: [["1", "1: search on"], ["0", "0: wheel stops"]] },
+  { g: "g-modes", id: "lostN", label: "TRACK_LOST_SAMPLES", unit: "readings", def: 2, min: 1, max: 100, step: 1 },
+  { g: "g-modes", id: "searchPwm", label: "TRACK_SEARCH_PWM", unit: "pwm", def: 0.28, min: 0, max: 1, step: 0.01 },
+  { g: "g-modes", id: "searchMaxPwm", label: "TRACK_SEARCH_MAX_PWM", unit: "pwm", def: 0.5, min: 0, max: 1, step: 0.01 },
+  { g: "g-modes", id: "searchMaxS", label: "TRACK_SEARCH_MAX_MS", unit: "s (firmware uses ms)", def: 20, min: 0.1, max: 600, step: 0.5 },
+  { g: "g-adv", id: "trackSign", label: "TRACK_SIGN", type: "select", def: "1", options: [["1", "+1"], ["-1", "−1"]] },
+  { g: "g-adv", id: "gnoise", label: "Gyro noise", unit: "deg/s, 1 sigma (about 2 measured at rest)", def: 0, min: 0, max: 20, step: 0.1 },
   { g: "g-adv", id: "sensor", label: "Sun sensor model", type: "select", def: "faces",
     options: [["faces", "4 faces, like KestrelSAT"], ["ideal", "Ideal (true angle)"]] },
   { g: "g-adv", id: "half", label: "Face half-angle", unit: "deg (23 measured, 50 datasheet)", def: 23, min: 5, max: 85, step: 1 },
@@ -285,22 +312,92 @@ function simulate(p) {
   let e = wrap180(p.offset0);     // true offset of the Sun from the panel (deg)
   let ws = p.rate0;               // satellite spin rate (deg/s), same sign as gyro_Z
   let ww = 0;                     // wheel speed (RPM), same sign as w_RW_meas
-  let wheelAng = 0, integ = 0;
-  let pwm = 0, P = 0, I = 0, D = 0, target = 0, sens = null;
+  let wheelAng = 0, target = 0;
+  // controller state, same names as sun_tracking_test() in main.cpp
+  let track_integral = 0, track_mode = 0, bright_f = 0, bright_max = 0, angle_since_peak = 0;
+  let scan_sign = 1, last_motion_sign = 1, in_view_count = 0, out_view_count = 0;
+  let lost_count = 0, search_active = false, search_gave_up = false, last_valid_pwm = 0;
+  let run_peak_any = 0, hold_integral = 0, search_pwm = 0, search_start = 0;
+  const TS = Number(p.trackSign);
+  let seed = 12345; // fixed seed so a run with gyro noise is repeatable
+  const rand = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+  const gauss = () => Math.sqrt(-2 * Math.log(rand() + 1e-12)) * Math.cos(2 * Math.PI * rand());
   const rows = [];
   for (let k = 0; k <= steps; k++) {
     if (k % nCtrl === 0) {
-      sens = sense(e, p);
-      if (sens.visible) {
-        if (Math.abs(sens.meas) < p.izone) integ += sens.meas * Ts; else integ = 0;
-        if (p.ki > 0) { const m = p.ilim / p.ki; integ = Math.max(-m, Math.min(m, integ)); }
-        P = p.kp * sens.meas; I = p.ki * integ; D = -p.kd * ws; // TRACK_GYRO_SIGN = -1
-        pwm = Math.max(-1, Math.min(1, P + I + D));
-      } else { integ = 0; P = I = D = 0; pwm = 0; }
+      const t = k * dt, dtc = Ts;
+      const sens = sense(e, p);
+      const [sun_plusX, sun_minusX, sun_plusY, sun_minusY] = sens.c;
+      const gyro_Z = ws + (p.gnoise > 0 ? p.gnoise * gauss() : 0);
+      const sun_error = sens.meas, sun_visible = sens.visible;
+      let P = 0, I = 0, D = 0, pwm = 0, angle_error = 0, centered = false, searching = false;
+
+      const brightest_face = Math.max(sun_plusX, sun_minusX, sun_plusY, sun_minusY);
+      if (brightest_face > run_peak_any) run_peak_any = brightest_face;
+      if (Math.abs(gyro_Z) > 3.0) last_motion_sign = gyro_Z > 0 ? 1 : -1;
+
+      if (p.center === "1") {
+        const other_max = Math.max(sun_plusX, sun_plusY, sun_minusY);
+        const minusX_in_view = sun_minusX >= p.peakMin && sun_minusX >= other_max;
+        if (minusX_in_view) { in_view_count++; out_view_count = 0; } else { out_view_count++; in_view_count = 0; }
+        if (track_mode === 0 && in_view_count >= p.inN) { // APPROACH -> SCAN
+          track_mode = 1; bright_f = sun_minusX; bright_max = bright_f; angle_since_peak = 0; scan_sign = last_motion_sign;
+        }
+        if (track_mode !== 0 && out_view_count >= p.outN) track_mode = 0; // lost the -X face
+        if (track_mode !== 0) {
+          bright_f += p.alpha * (sun_minusX - bright_f);
+          if (bright_f > bright_max) { bright_max = bright_f; angle_since_peak = 0; }
+          else angle_since_peak += gyro_Z * dtc;
+          if (track_mode === 1 && bright_f < p.drop * bright_max &&
+              bright_max >= p.peakFrac * run_peak_any && Math.abs(gyro_Z) > p.peakRate) { // SCAN -> HOLD
+            track_mode = 2; hold_integral = 0;
+          }
+        }
+      }
+
+      if (sun_visible) { lost_count = 0; search_active = false; search_gave_up = false; } else lost_count++;
+
+      if (track_mode === 1) {            // SCAN
+        track_integral = 0;
+        pwm = TS * scan_sign * p.scanPwm;
+      } else if (track_mode === 2) {     // HOLD
+        track_integral = 0;
+        angle_error = -angle_since_peak;
+        if (Math.abs(angle_error) > p.dead) hold_integral += angle_error * dtc; else hold_integral = 0;
+        if (p.holdKi > 0) { const m = p.ilim / p.holdKi; hold_integral = Math.max(-m, Math.min(m, hold_integral)); }
+        P = p.kp * angle_error; I = p.holdKi * hold_integral; D = p.kd * -1 * gyro_Z;
+        pwm = TS * (P + I + D);
+        if (Math.abs(angle_error) > p.dead && Math.abs(pwm) < p.minPwm && Math.abs(gyro_Z) < 3.0) {
+          pwm = (TS * angle_error >= 0 ? 1 : -1) * p.minPwm;
+        }
+        centered = Math.abs(angle_error) <= p.dead && Math.abs(gyro_Z) < 3.0 && bright_f >= 0.95 * bright_max;
+      } else if (sun_visible) {          // APPROACH (PID)
+        if (Math.abs(sun_error) < p.izone) track_integral += sun_error * dtc; else track_integral = 0;
+        if (p.ki > 0) { const m = p.ilim / p.ki; track_integral = Math.max(-m, Math.min(m, track_integral)); }
+        P = p.kp * sun_error; I = p.ki * track_integral; D = p.kd * -1 * gyro_Z; // TRACK_GYRO_SIGN = -1
+        pwm = TS * (P + I + D);
+      } else {                           // no light: SEARCH
+        track_integral = 0;
+        if (p.search === "1" && lost_count >= p.lostN) {
+          if (!search_active) {
+            search_active = true;
+            const push_sign = TS * last_motion_sign;
+            let push = p.searchPwm;
+            if (last_valid_pwm * push_sign > 0 && Math.abs(last_valid_pwm) > push) push = Math.abs(last_valid_pwm);
+            if (push > p.searchMaxPwm) push = p.searchMaxPwm;
+            search_pwm = push_sign * push; search_start = t;
+          }
+          if (t - search_start < p.searchMaxS) { searching = true; pwm = search_pwm; }
+          else search_gave_up = true;
+        }
+      }
+      pwm = Math.max(-1, Math.min(1, pwm));
+      if (!searching && (sun_visible || track_mode !== 0)) last_valid_pwm = pwm;
       target = wheelTarget(pwm, p);
       rows.push({
-        t: k * dt, meas: sens.meas, e, ws, ww, target, pwm, P, I, D, wheelAng,
-        vis: sens.visible, inTol: sens.visible && Math.abs(sens.meas) <= p.tol, c: sens.c,
+        t, meas: sun_error, e, ws, gyro: gyro_Z, ww, target, pwm, P, I, D, wheelAng,
+        vis: sun_visible, inTol: sun_visible && Math.abs(sun_error) <= p.tol, c: sens.c,
+        mode: searching ? 3 : track_mode, bright_f, bright_max, angle_since_peak, centered,
       });
     }
     // motor: wheel speed moves toward the target with a first-order lag, limited to +/- max
@@ -331,6 +428,7 @@ function metrics(rows, p) {
     if (!crossed && a !== 0 && Math.sign(a) !== Math.sign(b) && Math.abs(a - b) < 90) crossed = Math.sign(a) || 1;
     if (crossed && Math.abs(b) < 170) over = Math.max(over, -crossed * b);
   }
+  const cen = rows.find((r) => r.centered);
   const peakW = rows.reduce((m, r) => Math.max(m, Math.abs(r.ww)), 0);
   const sat = 100 * rows.filter((r) => Math.abs(r.ww) >= 0.98 * p.wmax).length / n;
   return [
@@ -338,6 +436,7 @@ function metrics(rows, p) {
     ["Time inside tolerance", fmt(pct, 0) + " %"],
     ["Largest overshoot", fmt(over, 1) + "°"],
     ["Final offset (last 5 s)", fmt(finalAbs, 1) + "°"],
+    ["Stopped at brightest −X", cen ? fmt(cen.t, 2) + " s" : "never"],
     ["Peak wheel speed", fmt(peakW, 0) + " RPM"],
     ["Wheel at max speed", fmt(sat, 0) + " % of run"],
   ];
@@ -449,7 +548,7 @@ function drawStage() {
   }
   const mid = sunAng + r.e * D2R / 2, lr = R * 0.26;
   ctx.fillStyle = ink; ctx.font = `600 ${Math.max(12, R * 0.032)}px ${css("--font-data")}`; ctx.textAlign = "center";
-  ctx.fillText(`${fmt(r.e, 1)}°`, cx + Math.cos(mid) * lr + (r.e >= 0 ? 18 : -18), cy + Math.sin(mid) * lr);
+  ctx.fillText(`${fmt(r.e, 1)}°`, cx + Math.cos(mid) * lr + (r.e >= 0 ? 30 : -30), cy + Math.sin(mid) * lr);
 
   // corner readout
   ctx.textAlign = "left"; ctx.font = `500 ${Math.max(11, R * 0.024)}px ${css("--font-data")}`; ctx.fillStyle = css("--ink-2");
@@ -459,6 +558,7 @@ function drawStage() {
     `spin rate     ${fmt(r.ws, 1)} deg/s`,
     `wheel         ${fmt(r.ww, 0)} RPM`,
     `command       ${fmt(r.pwm, 3)}`,
+    `mode          ${r.mode} ${["APPROACH", "SCAN", "HOLD", "SEARCH"][r.mode]}`,
   ];
   lines.forEach((l, i) => ctx.fillText(l, 10, 18 + i * Math.max(15, R * 0.034)));
   ctx.fillStyle = css("--series-sim"); ctx.fillRect(w - 128, h - 24, 18, 3);
@@ -471,9 +571,10 @@ const PLOTS = [
   { cv: "p-err", ro: "ro-err", lg: "lg-err", unit: "°", dec: 1, band: true,
     sim: [{ key: "e", label: "Sim, true offset", color: "--series-sim" }, { key: "meas", label: "Sim, sensor error", color: "--series-meas", dash: true }],
     expKey: "err" },
-  { cv: "p-rate", ro: "ro-rate", lg: "lg-rate", unit: " deg/s", dec: 1, sim: [{ key: "ws", label: "Sim", color: "--series-sim" }], expKey: "rate" },
+  { cv: "p-rate", ro: "ro-rate", lg: "lg-rate", unit: " deg/s", dec: 1, sim: [{ key: "gyro", label: "Sim", color: "--series-sim" }], expKey: "rate" },
   { cv: "p-wheel", ro: "ro-wheel", lg: "lg-wheel", unit: " RPM", dec: 0, limit: true, sim: [{ key: "ww", label: "Sim", color: "--series-sim" }], expKey: "wheel" },
   { cv: "p-pwm", ro: "ro-pwm", lg: "lg-pwm", unit: "", dec: 3, sim: [{ key: "pwm", label: "Sim", color: "--series-sim" }], expKey: "pwm" },
+  { cv: "p-mode", ro: "ro-mode", lg: "lg-mode", unit: "", dec: 0, fixed: [0, 3], sim: [{ key: "mode", label: "Sim", color: "--series-sim" }], expKey: "mode" },
 ];
 function niceTicks(lo, hi, count) {
   const span = hi - lo || 1, raw = span / count, mag = 10 ** Math.floor(Math.log10(raw));
@@ -500,6 +601,7 @@ function drawPlot(pl) {
   if (pl.band) { lo = Math.min(lo, -P0.tol); hi = Math.max(hi, P0.tol); }
   if (pl.limit) { lo = Math.min(lo, -P0.wmax); hi = Math.max(hi, P0.wmax); }
   lo = Math.min(lo, 0); hi = Math.max(hi, 0);
+  if (pl.fixed) { lo = pl.fixed[0]; hi = pl.fixed[1]; }
   if (hi - lo < 1e-6) { hi += 1; lo -= 1; }
   const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
   const L = 44, Rm = 20, Tm = 6, B = 20, pw = w - L - Rm, ph = h - Tm - B;
@@ -508,7 +610,7 @@ function drawPlot(pl) {
   ctx.font = `400 10.5px ${css("--font-data")}`; ctx.fillStyle = muted;
   // grid + y ticks
   ctx.strokeStyle = rule; ctx.lineWidth = 1; ctx.textAlign = "right"; ctx.textBaseline = "middle";
-  const yt = niceTicks(lo, hi, 4), ystep = yt.length > 1 ? yt[1] - yt[0] : 1;
+  const yt = pl.fixed ? [0, 1, 2, 3] : niceTicks(lo, hi, 4), ystep = yt.length > 1 ? yt[1] - yt[0] : 1;
   const ydec = ystep < 0.1 ? 2 : ystep < 1 ? 1 : (ystep % 1 ? 1 : 0);
   for (const v of yt) {
     const y = Math.round(Y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + pw, y); ctx.stroke();
@@ -626,12 +728,13 @@ for (const pl of PLOTS) {
 
 // ---------------------------------------------------------------- CSV export
 function toCsv() {
-  const head = "time(s),sun_error(deg),true_offset(deg),gyro_Z(dps),w_RW_meas(RPM),w_RW_target(RPM),pwm_cmd,p_term,i_term,d_term,in_tolerance,sun_visible,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count)";
+  const head = "time(s),sun_error(deg),true_offset(deg),gyro_Z(dps),w_RW_meas(RPM),w_RW_target(RPM),pwm_cmd,p_term,i_term,d_term,in_tolerance,sun_visible,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count),mode,bright_f(count),bright_max(count),angle_since_peak(deg),centered";
   const lines = [head];
   for (const r of rows) {
-    lines.push([r.t.toFixed(3), r.meas.toFixed(3), r.e.toFixed(3), r.ws.toFixed(3), r.ww.toFixed(2), r.target.toFixed(2),
+    lines.push([r.t.toFixed(3), r.meas.toFixed(3), r.e.toFixed(3), r.gyro.toFixed(3), r.ww.toFixed(2), r.target.toFixed(2),
       r.pwm.toFixed(4), r.P.toFixed(4), r.I.toFixed(4), r.D.toFixed(4), r.inTol ? 1 : 0, r.vis ? 1 : 0,
-      r.c[0].toFixed(0), r.c[1].toFixed(0), r.c[2].toFixed(0), r.c[3].toFixed(0)].join(","));
+      r.c[0].toFixed(0), r.c[1].toFixed(0), r.c[2].toFixed(0), r.c[3].toFixed(0),
+      r.mode, r.bright_f.toFixed(1), r.bright_max.toFixed(1), r.angle_since_peak.toFixed(2), r.centered ? 1 : 0].join(","));
   }
   return lines.join("\n") + "\n";
 }
@@ -690,15 +793,15 @@ function parseTest(text) {
   const ti = col(/^mcu time\(ms\)$|^time\(s\)$/i);
   if (ti < 0) throw new Error("No 'mcu time(ms)' or 'time(s)' column found.");
   const inMs = /ms/i.test(head[ti]);
-  const idx = { err: col(/^sun_error/i), rate: col(/^gyro_Z/i), wheel: col(/^w_RW_meas/i), pwm: col(/^pwm_cmd/i) };
-  const out = { t: [], err: [], rate: [], wheel: [], pwm: [] };
+  const idx = { err: col(/^sun_error/i), rate: col(/^gyro_Z/i), wheel: col(/^w_RW_meas/i), pwm: col(/^pwm_cmd/i), mode: col(/^mode$/i) };
+  const out = { t: [], err: [], rate: [], wheel: [], pwm: [], mode: [] };
   let t0 = null;
   for (const l of lines.slice(hIdx + 1)) {
     const c = l.split(",");
     const tv = parseFloat(c[ti]); if (!Number.isFinite(tv)) continue;
     if (t0 == null) t0 = tv;
     out.t.push(inMs ? (tv - t0) / 1000 : tv - t0);
-    for (const k of ["err", "rate", "wheel", "pwm"]) out[k].push(idx[k] >= 0 ? parseFloat(c[idx[k]]) : NaN);
+    for (const k of ["err", "rate", "wheel", "pwm", "mode"]) out[k].push(idx[k] >= 0 ? parseFloat(c[idx[k]]) : NaN);
   }
   if (out.t.length < 2) throw new Error("No data rows found in that file.");
   return out;
