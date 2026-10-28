@@ -117,7 +117,7 @@ Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
 Driver:       <cadet name>
 Reviewers:    <cadet names>
 Prompts:      asked to show the sun direction live on the KestrelSAT interface instead of the data point number
-Agent made:   XBee line "sDir:<deg>,err:<deg>,mode:<n>" 10 times a second (TRACK_XBEE_EVERY) in sun_tracking_test(), mirrored to Serial; replaces the "tp:<n>" counter
+Agent made:   XBee line "sDir:<deg>,s+X:<counts>,s-X:<counts>,s+Y:<counts>,s-Y:<counts>" 10 times a second (TRACK_XBEE_EVERY) in sun_tracking_test(), mirrored to Serial; replaces the "tp:<n>" counter
 We changed:   <your edits>
 Verified:     <does the GCS show/plot sDir live? any dropped characters?>
 Issue found:  <anything>

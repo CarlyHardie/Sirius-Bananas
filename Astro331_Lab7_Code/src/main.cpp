@@ -1662,10 +1662,10 @@ void sun_tracking_test() {
         dataFile.flush(); // save file every 10 test points
       }
 
-      // Live telemetry for the ground station: sun direction, sun error and mode (Name:value,Name:value)
+      // Live telemetry for the ground station: sun direction and the reading of each of the 4 photo sensors (Name:value,Name:value)
       if (test_point_count % TRACK_XBEE_EVERY == 0) {
-        char live[48];
-        snprintf(live, sizeof(live), "sDir:%.1f,err:%.1f,mode:%d", sun_direction, sun_error, searching ? 3 : track_mode);
+        char live[64];
+        snprintf(live, sizeof(live), "sDir:%.1f,s+X:%.0f,s-X:%.0f,s+Y:%.0f,s-Y:%.0f", sun_direction, sun_plusX, sun_minusX, sun_plusY, sun_minusY);
         Xbee.println(live);
         Serial.println(live); // mirror the XBee message to Serial
       }
