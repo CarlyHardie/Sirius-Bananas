@@ -102,3 +102,13 @@ We changed:   <your edits, e.g. measured inertias>
 Verified:     <compare against a test run; the agent checked the script parses, ran the physics in Node, and looked at one screenshot>
 Issue found:  <where the simulation and the test disagree>
 
+## 2026-10-28 · Sun position from opposite-face differences
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked to subtract the -X light from +X (and -Y from +Y) so room light does not matter
+Agent made:   sun_dX, sun_dY, sun_signal in read_sun_sensor(); "sun visible" now uses sun_signal instead of the four-face total; three new CSV columns; simulator kept in sync
+We changed:   <your edits>
+Verified:     <hardware test and result; the agent could only syntax-check>
+Issue found:  The direction already used the differences (the division by the total does not change atan2). Only the visibility check let room light in. After the change: <does a bright room with the lamp off still read "no sun"?>
+
