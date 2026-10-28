@@ -202,7 +202,7 @@ const PARAMS = [
   { g: "g-adv", id: "half", label: "Face half-angle", unit: "deg (23 measured, 50 datasheet)", def: 23, min: 5, max: 85, step: 1 },
   { g: "g-adv", id: "peak", label: "Lamp reading, face-on", unit: "counts (0–4095)", def: 2000, min: 1, max: 4095, step: 1 },
   { g: "g-adv", id: "floor", label: "ADC reads 0 below", unit: "counts", def: 10, min: 0, max: 1000, step: 1 },
-  { g: "g-adv", id: "minsig", label: "SUN_MIN_SIGNAL", unit: "counts of sun signal", def: 30, min: 0, max: 16000, step: 1 },
+  { g: "g-adv", id: "minsig", label: "SUN_MIN_SIGNAL", unit: "counts", def: 30, min: 0, max: 16000, step: 1 },
   { g: "g-adv", id: "ilim", label: "TRACK_I_LIMIT", unit: "pwm", def: 0.2, min: 0, max: 1, step: 0.01 },
   { g: "g-adv", id: "izone", label: "TRACK_I_ZONE_DEG", unit: "deg", def: 90, min: 0, max: 180, step: 1 },
   { g: "g-adv", id: "tau", label: "Motor time constant", unit: "s", def: 0.4, min: 0.01, max: 10, step: 0.01 },
@@ -266,11 +266,10 @@ function sense(e, p) {
   });
   if (p.sensor === "ideal") return { meas: e, visible: true, c, S: c[0] + c[1] + c[2] + c[3] };
   const S = c[0] + c[1] + c[2] + c[3];
-  const signal = Math.hypot(c[0] - c[1], c[2] - c[3]); // room light removed: +X minus -X, +Y minus -Y
   let sx = 0, sy = 0;
   if (S > 0) { sx = (c[0] - c[1]) / S; sy = (c[2] - c[3]) / S; }
   let dir = Math.atan2(sy, sx) * R2D; if (dir < 0) dir += 360;
-  return { meas: wrap180(dir - 180), visible: signal >= p.minsig, c, S };
+  return { meas: wrap180(dir - 180), visible: S >= p.minsig, c, S };
 }
 
 // Wheel speed the motor settles to for a pwm command (firmware sign: + pwm -> + wheel reading -> + gyro)

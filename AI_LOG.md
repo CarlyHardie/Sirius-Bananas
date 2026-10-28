@@ -110,5 +110,5 @@ Prompts:      asked to subtract the -X light from +X (and -Y from +Y) so room li
 Agent made:   sun_dX, sun_dY, sun_signal in read_sun_sensor(); "sun visible" now uses sun_signal instead of the four-face total; three new CSV columns; simulator kept in sync
 We changed:   <your edits>
 Verified:     <hardware test and result; the agent could only syntax-check>
-Issue found:  The direction already used the differences (the division by the total does not change atan2). Only the visibility check let room light in. After the change: <does a bright room with the lamp off still read "no sun"?>
+Issue found:  The direction already used the differences (the division by the total does not change atan2). Later changed: sun_X and sun_Y are now the raw differences in counts (not -1...+1) and sun_signal was removed; visibility uses the four-face total again. The angle is still only 0/90/180/270 when one face is lit. After the change: <what did sun_X and sun_Y read at your stopping point?>
 

@@ -29,7 +29,7 @@
 // Sun tracking (command 10):
 #define SUN_TARGET_ANGLE_DEG    180.0  // sun_direction value when the solar panel faces the sun
 #define SUN_TOLERANCE_DEG       45.0   // goal: stay within +/- this angle of the target
-#define SUN_MIN_SIGNAL          30.0   // CHECK: if the sun signal (length of the +X minus -X, +Y minus -Y arrow, room light removed) is below this, "no sun" (dark reads exactly 0 in the logs)
+#define SUN_MIN_SIGNAL          30.0   // CHECK: if the 4 sun sensor readings add up to less than this, "no sun" (dark reads exactly 0 in the logs)
 #define TRACK_KP                0.005  // wheel command (0 to 1) per degree of sun angle error
 #define TRACK_KD                0.01   // wheel command (0 to 1) per deg/s of spin rate
 #define TRACK_KI                0.0005 // wheel command (0 to 1) per (degree x second) of accumulated error. Start here; double if the offset goes away too slowly, halve if it swings. 0.0 = integral OFF

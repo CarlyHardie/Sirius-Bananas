@@ -118,8 +118,6 @@ uint32_t interval_heartBeat = 3000; // interval between heartbeat (ms)
 float sun_plusX, sun_minusX, sun_plusY, sun_minusY;
 float sun_X = 0.0, sun_Y = 0.0, sun_direction = 0.0;
 float S_mag;
-float sun_dX = 0.0, sun_dY = 0.0; // (+X face - -X face) and (+Y face - -Y face), in counts: light that reaches opposite faces equally (room light) cancels
-float sun_signal = 0.0;           // length of the (sun_dX, sun_dY) arrow in counts: how much SUN is seen, with the room light removed
 int16_t n_sun_sensor_reads = 5; // number of readings to average for sun sensor test point
 
 uint32_t timeNext_testPoint; // time of next test point (ms)
@@ -1257,7 +1255,7 @@ void stream_RWspeed()
  * @brief Reads the 4 sun sensor channels and finds the sun direction.
  *
  * Averages n_sun_sensor_reads readings per channel, then sets the globals
- * sun_plusX, sun_minusX, sun_plusY, sun_minusY, S_mag, sun_dX, sun_dY, sun_signal, sun_X, sun_Y and
+ * sun_plusX, sun_minusX, sun_plusY, sun_minusY, S_mag, sun_X (= +X - -X, counts), sun_Y (= +Y - -Y, counts) and
  * sun_direction (0 to 360 degrees). Same math as lab7_run_test_B().
  * If the total signal is zero, sun_X and sun_Y are set to 0 (avoids dividing by zero).
  */
@@ -1277,19 +1275,12 @@ void read_sun_sensor() {
   sun_plusY /= n_sun_sensor_reads;
   sun_minusY /= n_sun_sensor_reads;
 
-  S_mag = sun_plusX + sun_minusX + sun_plusY + sun_minusY; // total light, room light included
-  // Subtract opposite faces: room light hits both about equally, so it cancels and only the sun is left
-  sun_dX = sun_plusX - sun_minusX;
-  sun_dY = sun_plusY - sun_minusY;
-  sun_signal = sqrt(sun_dX * sun_dX + sun_dY * sun_dY);
-  if (S_mag > 0.0) {
-    sun_X = sun_dX / S_mag; // same direction as sun_dX, scaled to -1...+1 for the log
-    sun_Y = sun_dY / S_mag;
-  } else {
-    sun_X = 0.0;
-    sun_Y = 0.0;
-  }
-  sun_direction = (atan2(sun_dY, sun_dX) * RAD_TO_DEG);
+  S_mag = sun_plusX + sun_minusX + sun_plusY + sun_minusY; // total light
+  // Subtract opposite faces: room light hits both about equally, so it cancels and only the sun is left.
+  // sun_X and sun_Y are in sensor counts (not scaled to -1...+1)
+  sun_X = sun_plusX - sun_minusX;
+  sun_Y = sun_plusY - sun_minusY;
+  sun_direction = (atan2(sun_Y, sun_X) * RAD_TO_DEG);
   if (sun_direction < 0) {
     sun_direction += 360; // Adjust to range 0-360
   }
@@ -1323,7 +1314,7 @@ float wrap_180(float angle_deg) {
  *       D = TRACK_KD * TRACK_GYRO_SIGN * gyro_Z      (the spin rate: brake as we speed up, so we don't overshoot)
  *     The I term is limited to +/- TRACK_I_LIMIT and only builds up when the error is smaller than
  *     TRACK_I_ZONE_DEG, so it cannot "wind up" during a big turn. With TRACK_KI = 0 this is a PD controller.
- *  4. If the sun sensor sees almost no sun (sun_signal < SUN_MIN_SIGNAL, i.e. the +X-minus--X and +Y-minus--Y differences are tiny), the wheel command is 0
+ *  4. If the sun sensor sees almost no light (S_mag < SUN_MIN_SIGNAL), the wheel command is 0
  *     and the I term is reset.
  *
  * Stopping at the brightest point (TRACK_CENTER_ON_PEAK = 1). The sun sensor only reports WHICH face sees
@@ -1342,7 +1333,7 @@ float wrap_180(float angle_deg) {
  *               point is updated.
  * If the -X face stops seeing the light for TRACK_OUT_VIEW_SAMPLES readings, we go back to mode 0.
  *
- * Searching (TRACK_SEARCH_WHEN_LOST = 1, logged as mode 3). If NO face sees the sun (sun_signal < SUN_MIN_SIGNAL) for
+ * Searching (TRACK_SEARCH_WHEN_LOST = 1, logged as mode 3). If NO face sees the light (S_mag < SUN_MIN_SIGNAL) for
  * TRACK_LOST_SAMPLES readings, the satellite keeps going with the same wheel command it had just before the light
  * disappeared (never smaller than TRACK_SEARCH_PWM so the wheel keeps moving, never bigger than TRACK_SEARCH_MAX_PWM),
  * in the direction it was already turning, until a face sees the light again. It gives up after TRACK_SEARCH_MAX_MS so it cannot spin forever (for example if
@@ -1359,7 +1350,7 @@ float wrap_180(float angle_deg) {
 void sun_tracking_test() {
   char file_name[40];
   if (sd_createDataFile(&dataFile, "SunTrack")) {
-    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),panel_V(V),panel_I(mA),sun_X,sun_Y,sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,in_tolerance,p_term,i_term,d_term,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count),S_mag(count),mode,bright_f(count),bright_max(count),angle_since_peak(deg),centered,sun_dX(count),sun_dY(count),sun_signal(count)");
+    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),panel_V(V),panel_I(mA),sun_X,sun_Y,sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,in_tolerance,p_term,i_term,d_term,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count),S_mag(count),mode,bright_f(count),bright_max(count),angle_since_peak(deg),centered");
     dataFile.flush();
     dataFile.getName(file_name, sizeof(file_name));
     Xbee.print("[INFO] Data file created successfully: ");
@@ -1432,7 +1423,7 @@ void sun_tracking_test() {
 
       // Control:
       float sun_error = wrap_180(sun_direction - SUN_TARGET_ANGLE_DEG);
-      bool sun_visible = (sun_signal >= SUN_MIN_SIGNAL); // sun seen after the room light is subtracted out
+      bool sun_visible = (S_mag >= SUN_MIN_SIGNAL);
       bool in_tolerance = sun_visible && (fabs(sun_error) <= SUN_TOLERANCE_DEG);
       float dt_ctrl_s = (timeNow - timeLastControl) / 1000.0f; // real time since the last control step
       timeLastControl = timeNow;
@@ -1653,13 +1644,7 @@ void sun_tracking_test() {
       dataFile.print(",");
       dataFile.print(angle_since_peak);
       dataFile.print(",");
-      dataFile.print(centered ? 1 : 0);
-      dataFile.print(",");
-      dataFile.print(sun_dX);
-      dataFile.print(",");
-      dataFile.print(sun_dY);
-      dataFile.print(",");
-      dataFile.println(sun_signal);
+      dataFile.println(centered ? 1 : 0);
 
       // Print to USB Serial:
       Serial.print("t:");
