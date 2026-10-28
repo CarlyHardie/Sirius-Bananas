@@ -27,6 +27,7 @@
 #define INA238_MAX_CURRENT_A    0.5    // same max current as Lab 3 (amps)
 
 // Sun tracking (command 10):
+#define TRACK_XBEE_EVERY        2      // send the live sun direction over XBee every this many readings (2 x 50 ms = 10 per second; the 9600 baud XBee cannot carry every reading)
 #define SUN_TARGET_ANGLE_DEG    180.0  // sun_direction value when the solar panel faces the sun
 #define SUN_TOLERANCE_DEG       45.0   // goal: stay within +/- this angle of the target
 #define SUN_MIN_SIGNAL          30.0   // CHECK: if the 4 sun sensor readings add up to less than this, "no sun" (dark reads exactly 0 in the logs)

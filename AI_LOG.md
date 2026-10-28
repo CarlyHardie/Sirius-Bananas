@@ -112,3 +112,13 @@ We changed:   <your edits>
 Verified:     <hardware test and result; the agent could only syntax-check>
 Issue found:  The direction already used the differences (the division by the total does not change atan2). Later changed: sun_X and sun_Y are now the raw differences in counts (not -1...+1) and sun_signal was removed; visibility uses the four-face total again. The angle is still only 0/90/180/270 when one face is lit. After the change: <what did sun_X and sun_Y read at your stopping point?>
 
+## 2026-10-28 · Live sun direction on the ground station
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked to show the sun direction live on the KestrelSAT interface instead of the data point number
+Agent made:   XBee line "sDir:<deg>,err:<deg>,mode:<n>" 10 times a second (TRACK_XBEE_EVERY) in sun_tracking_test(), mirrored to Serial; replaces the "tp:<n>" counter
+We changed:   <your edits>
+Verified:     <does the GCS show/plot sDir live? any dropped characters?>
+Issue found:  <anything>
+
