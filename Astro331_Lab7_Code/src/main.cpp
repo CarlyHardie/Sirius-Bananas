@@ -1350,7 +1350,7 @@ float wrap_180(float angle_deg) {
 void sun_tracking_test() {
   char file_name[40];
   if (sd_createDataFile(&dataFile, "SunTrack")) {
-    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),panel_V(V),panel_I(mA),sun_X,sun_Y,sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,in_tolerance,p_term,i_term,d_term,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count),S_mag(count),mode,bright_f(count),bright_max(count),angle_since_peak(deg),centered");
+    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,p_term,i_term,d_term,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count),mode,bright_f(count),bright_max(count),angle_since_peak(deg),centered");
     dataFile.flush();
     dataFile.getName(file_name, sizeof(file_name));
     Xbee.print("[INFO] Data file created successfully: ");
@@ -1418,8 +1418,6 @@ void sun_tracking_test() {
       read_sun_sensor();
       imu_sensor.getAGMT();
       gyro_Z = imu_sensor.gyrZ();
-      float panel_V = ina_ok ? (ina.getBusVoltage_V() + ina.getShuntVoltage_mV() / 1000.0) : 0.0; // same as Lab 3
-      float panel_I_mA = ina_ok ? ina.getCurrent_mA() : 0.0;
 
       // Control:
       float sun_error = wrap_180(sun_direction - SUN_TARGET_ANGLE_DEG);
@@ -1602,14 +1600,6 @@ void sun_tracking_test() {
       dataFile.print(",");
       dataFile.print(w_RW_meas);
       dataFile.print(",");
-      dataFile.print(panel_V, 3);
-      dataFile.print(",");
-      dataFile.print(panel_I_mA, 3);
-      dataFile.print(",");
-      dataFile.print(sun_X, 4);
-      dataFile.print(",");
-      dataFile.print(sun_Y, 4);
-      dataFile.print(",");
       dataFile.print(sun_direction);
       dataFile.print(",");
       dataFile.print(sun_error);
@@ -1617,8 +1607,6 @@ void sun_tracking_test() {
       dataFile.print(gyro_Z);
       dataFile.print(",");
       dataFile.print(pwm_cmd, 4);
-      dataFile.print(",");
-      dataFile.print(in_tolerance ? 1 : 0);
       dataFile.print(",");
       dataFile.print(p_term, 4);
       dataFile.print(",");
@@ -1633,8 +1621,6 @@ void sun_tracking_test() {
       dataFile.print(sun_plusY);
       dataFile.print(",");
       dataFile.print(sun_minusY);
-      dataFile.print(",");
-      dataFile.print(S_mag);
       dataFile.print(",");
       dataFile.print(searching ? 3 : track_mode);
       dataFile.print(",");
@@ -1653,10 +1639,6 @@ void sun_tracking_test() {
       Serial.print(w_RW_cmd);
       Serial.print(",w_meas:");
       Serial.print(w_RW_meas);
-      Serial.print(",V:");
-      Serial.print(panel_V, 3);
-      Serial.print(",I_mA:");
-      Serial.print(panel_I_mA, 3);
       Serial.print(",sDir:");
       Serial.print(sun_direction);
       Serial.print(",err:");

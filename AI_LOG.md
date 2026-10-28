@@ -122,3 +122,13 @@ We changed:   <your edits>
 Verified:     <does the GCS show/plot sDir live? any dropped characters?>
 Issue found:  <anything>
 
+## 2026-10-28 · Shorter sun tracking CSV
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked whether all CSV columns are needed; the IV requirement was dropped
+Agent made:   removed panel_V, panel_I (the INA238 is no longer read during the test), sun_X, sun_Y, in_tolerance and S_mag from the SunTrack CSV and the panel V/I from the Serial line
+We changed:   <your edits>
+Verified:     <does the CSV have 19 columns and does the simulator overlay still read it?>
+Issue found:  <anything>
+
