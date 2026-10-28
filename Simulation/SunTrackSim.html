@@ -1,0 +1,716 @@
+<title>KestrelSAT Pointing Simulator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: lab-bench instrument panel. Parameters on the left (like the whiteboard), the satellite and Sun in the middle, time plots on the right. */
+:root {
+  --bg: #eef1f4;
+  --panel: #ffffff;
+  --ink: #12161c;
+  --ink-2: #48515e;
+  --muted: #747e8c;
+  --rule: #d9dee5;
+  --field: #f6f8fa;
+  --accent: #f2c200;          /* KestrelSAT yellow */
+  --accent-ink: #12161c;
+  --frame: #1b1f24;
+  --sun: #f0a400;
+  --panel-blue: #23406b;
+  --band: #e6ebf1;
+  --series-sim: #2a78d6;      /* categorical slot 1 */
+  --series-exp: #eb6834;      /* categorical slot 2 */
+  --series-meas: #1baf7a;     /* categorical slot 3 */
+  --warn: #b5470b;
+  --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1217; --panel: #161b22; --ink: #e9edf2; --ink-2: #b6bfcb; --muted: #8a94a2;
+    --rule: #29313b; --field: #1d232b; --accent: #f2c200; --accent-ink: #12161c; --frame: #3a414b;
+    --sun: #f5b324; --panel-blue: #3b6aa8; --band: #1f2731;
+    --series-sim: #3987e5; --series-exp: #d95926; --series-meas: #199e70; --warn: #f08a4b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1217; --panel: #161b22; --ink: #e9edf2; --ink-2: #b6bfcb; --muted: #8a94a2;
+  --rule: #29313b; --field: #1d232b; --accent: #f2c200; --accent-ink: #12161c; --frame: #3a414b;
+  --sun: #f5b324; --panel-blue: #3b6aa8; --band: #1f2731;
+  --series-sim: #3987e5; --series-exp: #d95926; --series-meas: #199e70; --warn: #f08a4b;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 32px;
+}
+.top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 24px; max-width: 1500px; margin: 0 auto 16px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.55rem; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+h1 span { color: var(--muted); font-weight: 500; }
+.top p { margin: 0; color: var(--ink-2); max-width: 70ch; }
+.app {
+  max-width: 1500px; margin: 0 auto; display: grid; gap: 18px;
+  grid-template-columns: minmax(250px, 300px) minmax(0, 1fr) minmax(0, 1.15fr);
+  grid-template-areas: "params viz plots";
+  align-items: start;
+}
+@media (max-width: 1180px) {
+  .app { grid-template-columns: minmax(250px, 290px) minmax(0, 1fr); grid-template-areas: "params viz" "params plots"; }
+}
+@media (max-width: 760px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-areas: "params" "viz" "plots"; }
+}
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; }
+.params { grid-area: params; padding: 14px 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.viz { grid-area: viz; padding: 12px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.plots { grid-area: plots; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.group { display: flex; flex-direction: column; gap: 8px; }
+.group > h2, details > summary {
+  font-family: var(--font-display); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); margin: 0;
+}
+details > summary { cursor: pointer; padding: 2px 0; }
+details[open] > summary { margin-bottom: 8px; }
+details .group { gap: 8px; }
+.field { display: grid; grid-template-columns: minmax(0, 1fr) 96px; align-items: center; gap: 4px 8px; }
+.field label { font-size: 0.86rem; color: var(--ink); }
+.field label small { display: block; color: var(--muted); font-size: 0.74rem; }
+.field input, .field select {
+  width: 100%; font: 500 0.86rem var(--font-data); font-variant-numeric: tabular-nums; color: var(--ink);
+  background: var(--field); border: 1px solid var(--rule); border-radius: 5px; padding: 5px 6px; text-align: right;
+}
+.field select { text-align: left; font-family: var(--font-body); }
+.field input:focus-visible, .field select:focus-visible, button:focus-visible, details > summary:focus-visible {
+  outline: 2px solid var(--series-sim); outline-offset: 1px;
+}
+.field input[aria-invalid="true"] { border-color: var(--warn); }
+.wide { grid-column: 1 / -1; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+button {
+  font: 600 0.86rem var(--font-body); border-radius: 6px; padding: 8px 12px; cursor: pointer;
+  border: 1px solid var(--rule); background: var(--field); color: var(--ink);
+}
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-family: var(--font-display); letter-spacing: 0.04em; text-transform: uppercase; flex: 1 1 auto; }
+button:disabled { opacity: 0.5; cursor: default; }
+.note { font-size: 0.78rem; color: var(--muted); margin: 0; }
+.err { font-size: 0.8rem; color: var(--warn); margin: 0; min-height: 1em; }
+.stage { position: relative; width: 100%; max-width: 560px; margin: 0 auto; aspect-ratio: 1 / 1; }
+.stage canvas { width: 100%; height: 100%; display: block; }
+.play { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.play .clock { font: 500 0.95rem var(--font-data); font-variant-numeric: tabular-nums; margin-left: auto; }
+.play label { font-size: 0.82rem; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.play select { font: 0.82rem var(--font-body); background: var(--field); color: var(--ink); border: 1px solid var(--rule); border-radius: 5px; padding: 4px 6px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.stat { background: var(--panel); padding: 8px 10px; }
+.stat dt { font-size: 0.72rem; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+.stat dd { margin: 2px 0 0; font: 500 1rem var(--font-data); font-variant-numeric: tabular-nums; }
+.plot { padding: 8px 10px 6px; }
+.plot header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; }
+.plot h3 { margin: 0; font-family: var(--font-display); font-size: 0.86rem; font-weight: 600; }
+.plot h3 span { color: var(--muted); font-weight: 500; }
+.readout { font: 0.76rem var(--font-data); font-variant-numeric: tabular-nums; color: var(--ink-2); min-height: 1.2em; }
+.plot canvas { width: 100%; height: 150px; display: block; touch-action: pan-y; cursor: crosshair; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.78rem; color: var(--ink-2); margin-top: 2px; }
+.legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid currentColor; vertical-align: middle; margin-right: 5px; }
+.legend i.dash { border-top-style: dashed; }
+.data-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.data-row .msg { font-size: 0.8rem; color: var(--ink-2); flex: 1 1 200px; min-width: 0; }
+input[type="file"] { display: none; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="top">
+  <h1>KestrelSAT <span>pointing simulator</span></h1>
+  <p>Set the satellite, wheel and controller values, press Start, and compare the result with a SunTrack CSV from a real test. It simulates the PID controller in command 10 (mode 0). Scan, hold and search are not modelled.</p>
+</div>
+
+<div class="app">
+  <form class="card params" id="params" autocomplete="off" novalidate>
+    <div class="group" id="g-body"><h2>Satellite and wheel</h2></div>
+    <div class="group" id="g-ctrl"><h2>Controller (same units as definitions.h)</h2></div>
+    <div class="group" id="g-ic"><h2>Initial conditions and run</h2></div>
+    <details id="adv">
+      <summary>Sun sensor and motor</summary>
+      <div class="group" id="g-adv"></div>
+    </details>
+    <p class="err" id="formErr" role="alert"></p>
+    <div class="btn-row">
+      <button type="submit" class="primary" id="startBtn">Start</button>
+      <button type="button" id="resetBtn">Defaults</button>
+    </div>
+    <p class="note">Default inertias are estimates that reproduce the 0.34 deg/s per wheel RPM seen in SunTrack_data004. Replace them with measured values when you have them.</p>
+  </form>
+
+  <section class="card viz" aria-label="Satellite and Sun">
+    <div class="stage"><canvas id="stage" role="img" aria-label="Top view of the satellite, its panel direction and the Sun"></canvas></div>
+    <div class="play">
+      <button type="button" id="pauseBtn">Pause</button>
+      <label for="speed">Playback
+        <select id="speed">
+          <option value="1">1×</option>
+          <option value="2">2×</option>
+          <option value="5" selected>5×</option>
+          <option value="10">10×</option>
+          <option value="0">Jump to end</option>
+        </select>
+      </label>
+      <span class="clock" id="clock">t = 0.00 s</span>
+    </div>
+    <dl class="stats" id="stats"></dl>
+  </section>
+
+  <section class="plots" aria-label="Time plots">
+    <div class="card plot"><header><h3>Sun offset <span>deg</span></h3><span class="readout" id="ro-err"></span></header><canvas id="p-err"></canvas><div class="legend" id="lg-err"></div></div>
+    <div class="card plot"><header><h3>Satellite spin rate <span>deg/s</span></h3><span class="readout" id="ro-rate"></span></header><canvas id="p-rate"></canvas><div class="legend" id="lg-rate"></div></div>
+    <div class="card plot"><header><h3>Reaction wheel speed <span>RPM</span></h3><span class="readout" id="ro-wheel"></span></header><canvas id="p-wheel"></canvas><div class="legend" id="lg-wheel"></div></div>
+    <div class="card plot"><header><h3>Wheel command <span>pwm, −1 to 1</span></h3><span class="readout" id="ro-pwm"></span></header><canvas id="p-pwm"></canvas><div class="legend" id="lg-pwm"></div></div>
+    <div class="card plot">
+      <div class="data-row">
+        <button type="button" class="primary" id="dlBtn">Download data (CSV)</button>
+        <button type="button" id="copyBtn">Copy CSV</button>
+        <button type="button" id="loadBtn">Overlay a test CSV</button>
+        <button type="button" id="clearBtn" hidden>Remove overlay</button>
+        <input type="file" id="fileIn" accept=".csv,text/csv">
+      </div>
+      <p class="readout" id="dataMsg" style="margin:8px 0 2px">The CSV uses the same column names and signs as your SunTrack files, one row every 50 ms.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------- parameters
+const PARAMS = [
+  { g: "g-body", id: "Is", label: "Satellite MOI", unit: "kg·m²", def: 0.050, min: 0.0005, max: 10, step: 0.001 },
+  { g: "g-body", id: "Iw", label: "Reaction wheel MOI", unit: "kg·m²", def: 0.0028, min: 0.00001, max: 1, step: 0.0001 },
+  { g: "g-body", id: "wmax", label: "Max wheel speed", unit: "RPM (375 measured)", def: 375, min: 10, max: 20000, step: 1 },
+  { g: "g-ctrl", id: "kp", label: "Proportional, Kp", unit: "per deg", def: 0.005, min: 0, max: 1, step: 0.0005 },
+  { g: "g-ctrl", id: "ki", label: "Integral, Ki", unit: "per deg·s", def: 0.0005, min: 0, max: 1, step: 0.0001 },
+  { g: "g-ctrl", id: "kd", label: "Derivative, Kd", unit: "per deg/s (−0.01 = your first, backwards D)", def: 0.01, min: -1, max: 1, step: 0.001 },
+  { g: "g-ic", id: "offset0", label: "Initial offset from Sun", unit: "deg, −180 to 180", def: 45, min: -180, max: 180, step: 1 },
+  { g: "g-ic", id: "rate0", label: "Initial spin rate", unit: "deg/s", def: 0, min: -360, max: 360, step: 1 },
+  { g: "g-ic", id: "runtime", label: "Run time", unit: "s", def: 60, min: 1, max: 600, step: 1 },
+  { g: "g-ic", id: "tol", label: "Tolerance", unit: "± deg", def: 45, min: 0.5, max: 180, step: 0.5 },
+  { g: "g-adv", id: "sensor", label: "Sun sensor model", type: "select", def: "faces",
+    options: [["faces", "4 faces, like KestrelSAT"], ["ideal", "Ideal (true angle)"]] },
+  { g: "g-adv", id: "half", label: "Face half-angle", unit: "deg (23 measured, 50 datasheet)", def: 23, min: 5, max: 85, step: 1 },
+  { g: "g-adv", id: "peak", label: "Lamp reading, face-on", unit: "counts (0–4095)", def: 2000, min: 1, max: 4095, step: 1 },
+  { g: "g-adv", id: "floor", label: "ADC reads 0 below", unit: "counts", def: 10, min: 0, max: 1000, step: 1 },
+  { g: "g-adv", id: "minsig", label: "SUN_MIN_SIGNAL", unit: "counts", def: 30, min: 0, max: 16000, step: 1 },
+  { g: "g-adv", id: "ilim", label: "TRACK_I_LIMIT", unit: "pwm", def: 0.2, min: 0, max: 1, step: 0.01 },
+  { g: "g-adv", id: "izone", label: "TRACK_I_ZONE_DEG", unit: "deg", def: 90, min: 0, max: 180, step: 1 },
+  { g: "g-adv", id: "tau", label: "Motor time constant", unit: "s", def: 0.4, min: 0.01, max: 10, step: 0.01 },
+  { g: "g-adv", id: "db", label: "Motor deadband", unit: "pwm (wheel still below this)", def: 0.07, min: 0, max: 0.9, step: 0.01 },
+  { g: "g-adv", id: "damp", label: "Friction on satellite", unit: "N·m·s/rad", def: 0, min: 0, max: 10, step: 0.0005 },
+];
+
+const $ = (id) => document.getElementById(id);
+function buildForm() {
+  for (const p of PARAMS) {
+    const row = document.createElement("div");
+    row.className = "field";
+    const lab = document.createElement("label");
+    lab.htmlFor = "in-" + p.id;
+    lab.textContent = p.label;
+    if (p.unit) { const s = document.createElement("small"); s.textContent = p.unit; lab.appendChild(s); }
+    let inp;
+    if (p.type === "select") {
+      inp = document.createElement("select");
+      for (const [v, t] of p.options) { const o = document.createElement("option"); o.value = v; o.textContent = t; inp.appendChild(o); }
+      inp.value = p.def;
+    } else {
+      inp = document.createElement("input");
+      inp.type = "number"; inp.inputMode = "decimal";
+      inp.min = p.min; inp.max = p.max; inp.step = p.step; inp.value = p.def;
+    }
+    inp.id = "in-" + p.id;
+    row.append(lab, inp);
+    $(p.g).appendChild(row);
+  }
+}
+function readParams() {
+  const out = {}; const bad = [];
+  for (const p of PARAMS) {
+    const el = $("in-" + p.id);
+    if (p.type === "select") { out[p.id] = el.value; continue; }
+    const v = parseFloat(el.value);
+    const ok = Number.isFinite(v) && v >= p.min && v <= p.max;
+    el.setAttribute("aria-invalid", ok ? "false" : "true");
+    if (!ok) bad.push(`${p.label} must be between ${p.min} and ${p.max}`);
+    out[p.id] = v;
+  }
+  return { p: out, bad };
+}
+
+// ---------------------------------------------------------------- simulation
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+const wrap180 = (a) => { a = ((a + 180) % 360 + 360) % 360 - 180; return a; };
+const FACE_DIRS = [0, 180, 90, 270]; // +X, -X, +Y, -Y in the firmware's sun_direction frame (-X = panel = 180)
+
+// What the 4 sun sensor channels read for a true offset e (deg), and the error the firmware would compute
+function sense(e, p) {
+  const sd = 180 + e;
+  const n = Math.log(0.5) / Math.log(Math.cos(p.half * D2R)); // cos^n lobe that is 50% at the half-angle
+  const c = FACE_DIRS.map((d) => {
+    const a = wrap180(sd - d);
+    if (Math.abs(a) >= 90) return 0;
+    let v = p.peak * Math.pow(Math.cos(a * D2R), n);
+    if (v < p.floor) v = 0;
+    return Math.min(v, 4095);
+  });
+  if (p.sensor === "ideal") return { meas: e, visible: true, c, S: c[0] + c[1] + c[2] + c[3] };
+  const S = c[0] + c[1] + c[2] + c[3];
+  let sx = 0, sy = 0;
+  if (S > 0) { sx = (c[0] - c[1]) / S; sy = (c[2] - c[3]) / S; }
+  let dir = Math.atan2(sy, sx) * R2D; if (dir < 0) dir += 360;
+  return { meas: wrap180(dir - 180), visible: S >= p.minsig, c, S };
+}
+
+// Wheel speed the motor settles to for a pwm command (firmware sign: + pwm -> + wheel reading -> + gyro)
+function wheelTarget(pwm, p) {
+  const a = Math.abs(pwm);
+  if (a <= p.db) return 0;
+  return Math.sign(pwm) * p.wmax * Math.min(1, (a - p.db) / (1 - p.db));
+}
+
+function simulate(p) {
+  const dt = 0.001, Ts = 0.05, nCtrl = Math.round(Ts / dt);
+  const steps = Math.round(p.runtime / dt);
+  let e = wrap180(p.offset0);     // true offset of the Sun from the panel (deg)
+  let ws = p.rate0;               // satellite spin rate (deg/s), same sign as gyro_Z
+  let ww = 0;                     // wheel speed (RPM), same sign as w_RW_meas
+  let wheelAng = 0, integ = 0;
+  let pwm = 0, P = 0, I = 0, D = 0, target = 0, sens = null;
+  const rows = [];
+  for (let k = 0; k <= steps; k++) {
+    if (k % nCtrl === 0) {
+      sens = sense(e, p);
+      if (sens.visible) {
+        if (Math.abs(sens.meas) < p.izone) integ += sens.meas * Ts; else integ = 0;
+        if (p.ki > 0) { const m = p.ilim / p.ki; integ = Math.max(-m, Math.min(m, integ)); }
+        P = p.kp * sens.meas; I = p.ki * integ; D = -p.kd * ws; // TRACK_GYRO_SIGN = -1
+        pwm = Math.max(-1, Math.min(1, P + I + D));
+      } else { integ = 0; P = I = D = 0; pwm = 0; }
+      target = wheelTarget(pwm, p);
+      rows.push({
+        t: k * dt, meas: sens.meas, e, ws, ww, target, pwm, P, I, D, wheelAng,
+        vis: sens.visible, inTol: sens.visible && Math.abs(sens.meas) <= p.tol, c: sens.c,
+      });
+    }
+    // motor: wheel speed moves toward the target with a first-order lag, limited to +/- max
+    let wwNew = ww + (target - ww) * dt / p.tau;
+    wwNew = Math.max(-p.wmax, Math.min(p.wmax, wwNew));
+    const dwwRad = (wwNew - ww) * 2 * Math.PI / 60;
+    ww = wwNew;
+    // satellite: momentum exchange with the wheel (wheel reading and gyro share a sign on KestrelSAT), plus friction
+    const dwsRad = (p.Iw * dwwRad - p.damp * ws * D2R * dt) / (p.Is + p.Iw);
+    ws += dwsRad * R2D;
+    e = wrap180(e - ws * dt);        // + gyro turns the panel toward lower sun_error
+    wheelAng += ww * 6 * dt;
+  }
+  return rows;
+}
+
+function metrics(rows, p) {
+  const n = rows.length, T = rows[n - 1].t;
+  const inTrue = (r) => Math.abs(r.e) <= p.tol;
+  const first = rows.find(inTrue);
+  const pct = 100 * rows.filter(inTrue).length / n;
+  const tail = rows.filter((r) => r.t >= T - Math.min(5, T * 0.2));
+  const finalAbs = tail.reduce((s, r) => s + Math.abs(r.e), 0) / tail.length;
+  // overshoot: how far past 0 the true offset goes after it first crosses 0 (a wrap through 180 is not a crossing)
+  let over = 0, crossed = false;
+  for (let i = 1; i < n; i++) {
+    const a = rows[i - 1].e, b = rows[i].e;
+    if (!crossed && a !== 0 && Math.sign(a) !== Math.sign(b) && Math.abs(a - b) < 90) crossed = Math.sign(a) || 1;
+    if (crossed && Math.abs(b) < 170) over = Math.max(over, -crossed * b);
+  }
+  const peakW = rows.reduce((m, r) => Math.max(m, Math.abs(r.ww)), 0);
+  const sat = 100 * rows.filter((r) => Math.abs(r.ww) >= 0.98 * p.wmax).length / n;
+  return [
+    ["First inside ±" + fmt(p.tol, 0) + "° (true)", first ? fmt(first.t, 2) + " s" : "never"],
+    ["Time inside tolerance", fmt(pct, 0) + " %"],
+    ["Largest overshoot", fmt(over, 1) + "°"],
+    ["Final offset (last 5 s)", fmt(finalAbs, 1) + "°"],
+    ["Peak wheel speed", fmt(peakW, 0) + " RPM"],
+    ["Wheel at max speed", fmt(sat, 0) + " % of run"],
+  ];
+}
+function fmt(v, d) { const r = Math.round(v * 10 ** d) / 10 ** d; return (r === 0 ? 0 : r).toFixed(d).replace(/^-/, "−"); }
+
+// ---------------------------------------------------------------- state
+let P0 = null, rows = [], exp = null, expName = "";
+let playT = 0, playing = false, lastTS = 0, hoverT = null;
+
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+// ---------------------------------------------------------------- stage drawing
+function sizeCanvas(cv) {
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w: r.width, h: r.height };
+}
+function rowAt(t) {
+  if (!rows.length) return null;
+  const i = Math.max(0, Math.min(rows.length - 1, Math.round(t / 0.05)));
+  return rows[i];
+}
+function drawStage() {
+  const cv = $("stage"); const { ctx, w, h } = sizeCanvas(cv);
+  ctx.clearRect(0, 0, w, h);
+  const r = rowAt(playT); if (!r) return;
+  const ink = css("--ink"), muted = css("--muted"), rule = css("--rule");
+  const cx = w / 2, cy = h * 0.6, R = Math.min(w, h);
+  const sunAng = -Math.PI / 2;                 // Sun is straight up on screen
+  const panelAng = sunAng + r.e * D2R;         // panel normal, clockwise by the offset
+  const sunDist = R * 0.42, sunR = R * 0.055;
+  const sx = cx + Math.cos(sunAng) * sunDist, sy = cy + Math.sin(sunAng) * sunDist;
+
+  // tolerance wedge around the Sun direction
+  const tol = Math.min(P0.tol, 179.5) * D2R;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, R * 0.36, sunAng - tol, sunAng + tol); ctx.closePath();
+  ctx.fillStyle = css("--band"); ctx.fill();
+  ctx.font = `500 ${Math.max(10, R * 0.022)}px ${css("--font-data")}`; ctx.fillStyle = muted; ctx.textAlign = "left";
+  const tla = sunAng + Math.min(tol, 80 * D2R);
+  ctx.fillText(`±${fmt(P0.tol, 0)}° tolerance`, cx + Math.cos(tla) * R * 0.37 + 4, cy + Math.sin(tla) * R * 0.37);
+
+  // Sun with rays (as on the whiteboard)
+  ctx.strokeStyle = css("--sun"); ctx.fillStyle = css("--sun"); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(sx, sy, sunR, 0, 2 * Math.PI); ctx.fill();
+  for (let i = 0; i < 10; i++) {
+    const a = i * Math.PI / 5;
+    ctx.beginPath(); ctx.moveTo(sx + Math.cos(a) * sunR * 1.35, sy + Math.sin(a) * sunR * 1.35);
+    ctx.lineTo(sx + Math.cos(a) * sunR * 1.8, sy + Math.sin(a) * sunR * 1.8); ctx.stroke();
+  }
+  ctx.fillStyle = muted; ctx.textAlign = "center"; ctx.fillText("Sun (lamp)", sx, sy - sunR * 2.1);
+
+  // line to the Sun
+  ctx.setLineDash([5, 5]); ctx.strokeStyle = muted; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(sx, sy + sunR * 1.4); ctx.stroke(); ctx.setLineDash([]);
+
+  // satellite body (top view), rotated so the -X face (solar panel) points along panelAng
+  const half = R * 0.13;
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(panelAng + Math.PI / 2);
+  ctx.fillStyle = css("--accent"); ctx.strokeStyle = css("--frame"); ctx.lineWidth = Math.max(3, R * 0.012);
+  ctx.beginPath(); ctx.rect(-half, -half, 2 * half, 2 * half); ctx.fill(); ctx.stroke();
+  // solar panel on the -X face (top edge in this rotated frame)
+  ctx.fillStyle = css("--panel-blue"); ctx.fillRect(-half * 0.8, -half - R * 0.022, half * 1.6, R * 0.02);
+  // face readings as bars outside each face (+X opposite the panel, +Y and -Y on the sides)
+  if (P0.sensor === "faces") {
+    const faces = [["+X", 1, 0, half], ["-X", 0, 0, -half], ["+Y", 2, -half, 0], ["-Y", 3, half, 0]];
+    for (const [name, idx] of faces) {
+      const frac = r.c[idx] / 4095, len = frac * R * 0.2;
+      ctx.save();
+      const rot = { "-X": 0, "+X": Math.PI, "+Y": Math.PI / 2, "-Y": -Math.PI / 2 }[name];
+      ctx.rotate(rot);
+      ctx.fillStyle = css("--series-meas");
+      if (len > 0.5) ctx.fillRect(-R * 0.012, -half - R * 0.03 - len, R * 0.024, len);
+      ctx.restore();
+    }
+  }
+  // reaction wheel with a spoke (shown at 1/20 of real speed so it can be seen)
+  const wr = half * 0.5;
+  ctx.strokeStyle = css("--frame"); ctx.lineWidth = 2; ctx.fillStyle = css("--panel");
+  ctx.beginPath(); ctx.arc(0, 0, wr, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+  const sp = (r.wheelAng / 20) * D2R;
+  ctx.beginPath(); ctx.moveTo(-Math.cos(sp) * wr, -Math.sin(sp) * wr); ctx.lineTo(Math.cos(sp) * wr, Math.sin(sp) * wr); ctx.stroke();
+  ctx.restore();
+  // face names, upright, just inside each face
+  ctx.font = `600 ${Math.max(10, R * 0.022)}px ${css("--font-data")}`; ctx.fillStyle = css("--accent-ink");
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const [name, rot] of [["-X", 0], ["+X", Math.PI], ["+Y", Math.PI / 2], ["-Y", -Math.PI / 2]]) {
+    const a = panelAng + rot, d = half * 0.72;
+    ctx.fillText(name, cx + Math.cos(a) * d, cy + Math.sin(a) * d);
+  }
+  ctx.textBaseline = "alphabetic";
+
+  // panel normal arrow
+  const aLen = R * 0.3;
+  const ax = cx + Math.cos(panelAng) * aLen, ay = cy + Math.sin(panelAng) * aLen;
+  ctx.strokeStyle = css("--series-sim"); ctx.fillStyle = css("--series-sim"); ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(cx + Math.cos(panelAng) * half * 1.25, cy + Math.sin(panelAng) * half * 1.25); ctx.lineTo(ax, ay); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ax, ay);
+  ctx.lineTo(ax - Math.cos(panelAng - 0.4) * 11, ay - Math.sin(panelAng - 0.4) * 11);
+  ctx.lineTo(ax - Math.cos(panelAng + 0.4) * 11, ay - Math.sin(panelAng + 0.4) * 11); ctx.closePath(); ctx.fill();
+
+  // offset arc and label
+  if (Math.abs(r.e) > 0.5) {
+    const ar = R * 0.22;
+    ctx.strokeStyle = ink; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(cx, cy, ar, Math.min(sunAng, panelAng), Math.max(sunAng, panelAng)); ctx.stroke();
+  }
+  const mid = sunAng + r.e * D2R / 2, lr = R * 0.26;
+  ctx.fillStyle = ink; ctx.font = `600 ${Math.max(12, R * 0.032)}px ${css("--font-data")}`; ctx.textAlign = "center";
+  ctx.fillText(`${fmt(r.e, 1)}°`, cx + Math.cos(mid) * lr + (r.e >= 0 ? 18 : -18), cy + Math.sin(mid) * lr);
+
+  // corner readout
+  ctx.textAlign = "left"; ctx.font = `500 ${Math.max(11, R * 0.024)}px ${css("--font-data")}`; ctx.fillStyle = css("--ink-2");
+  const lines = [
+    `true offset   ${fmt(r.e, 1)}°`,
+    `sensor error  ${r.vis ? fmt(r.meas, 1) + "°" : "no sun"}`,
+    `spin rate     ${fmt(r.ws, 1)} deg/s`,
+    `wheel         ${fmt(r.ww, 0)} RPM`,
+    `command       ${fmt(r.pwm, 3)}`,
+  ];
+  lines.forEach((l, i) => ctx.fillText(l, 10, 18 + i * Math.max(15, R * 0.034)));
+  ctx.fillStyle = css("--series-sim"); ctx.fillRect(w - 128, h - 24, 18, 3);
+  ctx.fillStyle = muted; ctx.font = `500 ${Math.max(10, R * 0.021)}px ${css("--font-body")}`;
+  ctx.fillText("panel direction", w - 104, h - 19);
+}
+
+// ---------------------------------------------------------------- plots
+const PLOTS = [
+  { cv: "p-err", ro: "ro-err", lg: "lg-err", unit: "°", dec: 1, band: true,
+    sim: [{ key: "e", label: "Sim, true offset", color: "--series-sim" }, { key: "meas", label: "Sim, sensor error", color: "--series-meas", dash: true }],
+    expKey: "err" },
+  { cv: "p-rate", ro: "ro-rate", lg: "lg-rate", unit: " deg/s", dec: 1, sim: [{ key: "ws", label: "Sim", color: "--series-sim" }], expKey: "rate" },
+  { cv: "p-wheel", ro: "ro-wheel", lg: "lg-wheel", unit: " RPM", dec: 0, limit: true, sim: [{ key: "ww", label: "Sim", color: "--series-sim" }], expKey: "wheel" },
+  { cv: "p-pwm", ro: "ro-pwm", lg: "lg-pwm", unit: "", dec: 3, sim: [{ key: "pwm", label: "Sim", color: "--series-sim" }], expKey: "pwm" },
+];
+function niceTicks(lo, hi, count) {
+  const span = hi - lo || 1, raw = span / count, mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => span / s <= count) || mag * 10;
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
+  return out;
+}
+function seriesList(pl) {
+  const list = pl.sim.map((s) => ({ ...s, pts: rows.map((r) => [r.t, r[s.key]]) }));
+  if (exp && exp[pl.expKey] && exp[pl.expKey].some((v) => Number.isFinite(v))) {
+    list.push({ label: "Test: " + expName, color: "--series-exp", pts: exp.t.map((t, i) => [t, exp[pl.expKey][i]]).filter((q) => Number.isFinite(q[1])) });
+  }
+  return list;
+}
+function drawPlot(pl) {
+  const cv = $(pl.cv); const { ctx, w, h } = sizeCanvas(cv);
+  ctx.clearRect(0, 0, w, h);
+  if (!rows.length) return;
+  let series = seriesList(pl);
+  if (pl.cv === "p-err" && P0.sensor === "ideal") series = series.filter((s) => s.key !== "meas");
+  const T = Math.max(P0.runtime, exp ? exp.t[exp.t.length - 1] || 0 : 0);
+  let lo = Infinity, hi = -Infinity;
+  for (const s of series) for (const [, v] of s.pts) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  if (pl.band) { lo = Math.min(lo, -P0.tol); hi = Math.max(hi, P0.tol); }
+  if (pl.limit) { lo = Math.min(lo, -P0.wmax); hi = Math.max(hi, P0.wmax); }
+  lo = Math.min(lo, 0); hi = Math.max(hi, 0);
+  if (hi - lo < 1e-6) { hi += 1; lo -= 1; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const L = 44, Rm = 20, Tm = 6, B = 20, pw = w - L - Rm, ph = h - Tm - B;
+  const X = (t) => L + (t / T) * pw, Y = (v) => Tm + (1 - (v - lo) / (hi - lo)) * ph;
+  const muted = css("--muted"), rule = css("--rule");
+  ctx.font = `400 10.5px ${css("--font-data")}`; ctx.fillStyle = muted;
+  // grid + y ticks
+  ctx.strokeStyle = rule; ctx.lineWidth = 1; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  const yt = niceTicks(lo, hi, 4), ystep = yt.length > 1 ? yt[1] - yt[0] : 1;
+  const ydec = ystep < 0.1 ? 2 : ystep < 1 ? 1 : (ystep % 1 ? 1 : 0);
+  for (const v of yt) {
+    const y = Math.round(Y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + pw, y); ctx.stroke();
+    ctx.fillText(fmt(v, ydec), L - 5, y);
+  }
+  // x ticks
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (const t of niceTicks(0, T, 6)) ctx.fillText(`${fmt(t, 0)} s`, X(t), Tm + ph + 5);
+  // tolerance band and wheel limits
+  if (pl.band) { ctx.fillStyle = css("--band"); ctx.globalAlpha = 0.9; ctx.fillRect(L, Y(P0.tol), pw, Y(-P0.tol) - Y(P0.tol)); ctx.globalAlpha = 1; }
+  if (pl.limit) {
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = muted;
+    for (const v of [P0.wmax, -P0.wmax]) { ctx.beginPath(); ctx.moveTo(L, Y(v)); ctx.lineTo(L + pw, Y(v)); ctx.stroke(); }
+    ctx.setLineDash([]);
+  }
+  ctx.strokeStyle = muted; ctx.beginPath(); ctx.moveTo(L, Y(0)); ctx.lineTo(L + pw, Y(0)); ctx.stroke();
+  // series (sim drawn up to the playback time, the test drawn in full)
+  for (const s of series) {
+    const isSim = s.color !== "--series-exp";
+    const pts = isSim ? s.pts.filter((q) => q[0] <= playT + 1e-9) : s.pts;
+    if (pts.length < 2) continue;
+    const stride = Math.max(1, Math.floor(pts.length / (pw * 1.5)));
+    ctx.strokeStyle = css(s.color); ctx.lineWidth = s.dash ? 1.5 : 2; ctx.lineJoin = "round";
+    ctx.setLineDash(s.dash ? [4, 3] : []);
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i += stride) { const [t, v] = pts[i]; i === 0 ? ctx.moveTo(X(t), Y(v)) : ctx.lineTo(X(t), Y(v)); }
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  // crosshair + readout
+  const ro = $(pl.ro);
+  if (hoverT != null && hoverT >= 0 && hoverT <= T) {
+    const x = X(hoverT); ctx.strokeStyle = css("--ink-2"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, Tm); ctx.lineTo(x, Tm + ph); ctx.stroke();
+    const parts = [`t ${fmt(hoverT, 2)} s`];
+    for (const s of series) {
+      const q = nearest(s.pts, hoverT);
+      if (q) {
+        ctx.fillStyle = css(s.color); ctx.beginPath(); ctx.arc(X(q[0]), Y(q[1]), 4, 0, 2 * Math.PI); ctx.fill();
+        ctx.strokeStyle = css("--panel"); ctx.lineWidth = 2; ctx.stroke();
+        parts.push(`${s.label.replace(/^Test: .*/, "Test")} ${fmt(q[1], pl.dec)}${pl.unit}`);
+      }
+    }
+    ro.textContent = parts.join(" · ");
+  } else ro.textContent = "";
+  // legend (two or more series)
+  const lg = $(pl.lg); lg.textContent = "";
+  if (series.length >= 2) for (const s of series) {
+    const sp = document.createElement("span"); const i = document.createElement("i");
+    if (s.dash) i.className = "dash"; i.style.color = css(s.color);
+    sp.append(i, document.createTextNode(s.label)); lg.appendChild(sp);
+  }
+  cv._map = { L, pw, T };
+}
+function nearest(pts, t) {
+  if (!pts.length) return null; let lo = 0, hi = pts.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (pts[m][0] < t) lo = m; else hi = m; }
+  const q = Math.abs(pts[lo][0] - t) <= Math.abs(pts[hi][0] - t) ? pts[lo] : pts[hi];
+  return Math.abs(q[0] - t) <= 0.6 ? q : null;
+}
+function drawAll() {
+  drawStage(); for (const pl of PLOTS) drawPlot(pl);
+  $("clock").textContent = `t = ${fmt(Math.min(playT, P0 ? P0.runtime : 0), 2)} s`;
+}
+
+// ---------------------------------------------------------------- run + playback
+function run() {
+  const { p, bad } = readParams();
+  $("formErr").textContent = bad.length ? bad[0] + "." : "";
+  if (bad.length) return;
+  P0 = p; rows = simulate(p);
+  const st = $("stats"); st.textContent = "";
+  for (const [k, v] of metrics(rows, p)) {
+    const d = document.createElement("div"); d.className = "stat";
+    const dt = document.createElement("dt"); dt.textContent = k; const dd = document.createElement("dd"); dd.textContent = v;
+    d.append(dt, dd); st.appendChild(d);
+  }
+  const speed = +$("speed").value;
+  playT = speed === 0 ? p.runtime : 0; playing = speed !== 0; lastTS = 0;
+  $("pauseBtn").textContent = "Pause"; $("pauseBtn").disabled = !playing;
+  drawAll(); if (playing) requestAnimationFrame(tick);
+}
+function tick(ts) {
+  if (!playing) return;
+  if (lastTS) playT += ((ts - lastTS) / 1000) * (+$("speed").value || 1000);
+  lastTS = ts;
+  if (playT >= P0.runtime) { playT = P0.runtime; playing = false; $("pauseBtn").disabled = true; }
+  drawAll();
+  if (playing) requestAnimationFrame(tick);
+}
+$("pauseBtn").addEventListener("click", () => {
+  if (!rows.length || playT >= P0.runtime) return;
+  playing = !playing; $("pauseBtn").textContent = playing ? "Pause" : "Resume"; lastTS = 0;
+  if (playing) requestAnimationFrame(tick);
+});
+$("speed").addEventListener("change", () => {
+  if (+$("speed").value === 0 && rows.length) { playT = P0.runtime; playing = false; $("pauseBtn").disabled = true; drawAll(); }
+});
+$("params").addEventListener("submit", (ev) => { ev.preventDefault(); run(); });
+$("resetBtn").addEventListener("click", () => {
+  for (const p of PARAMS) $("in-" + p.id).value = p.def;
+  run();
+});
+
+// crosshair hover, synced across plots
+for (const pl of PLOTS) {
+  const cv = $(pl.cv);
+  cv.addEventListener("pointermove", (ev) => {
+    const m = cv._map; if (!m) return;
+    const r = cv.getBoundingClientRect(), x = ev.clientX - r.left;
+    hoverT = Math.max(0, Math.min(m.T, ((x - m.L) / m.pw) * m.T));
+    for (const q of PLOTS) drawPlot(q);
+  });
+  cv.addEventListener("pointerleave", () => { hoverT = null; for (const q of PLOTS) drawPlot(q); });
+}
+
+// ---------------------------------------------------------------- CSV export
+function toCsv() {
+  const head = "time(s),sun_error(deg),true_offset(deg),gyro_Z(dps),w_RW_meas(RPM),w_RW_target(RPM),pwm_cmd,p_term,i_term,d_term,in_tolerance,sun_visible,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count)";
+  const lines = [head];
+  for (const r of rows) {
+    lines.push([r.t.toFixed(3), r.meas.toFixed(3), r.e.toFixed(3), r.ws.toFixed(3), r.ww.toFixed(2), r.target.toFixed(2),
+      r.pwm.toFixed(4), r.P.toFixed(4), r.I.toFixed(4), r.D.toFixed(4), r.inTol ? 1 : 0, r.vis ? 1 : 0,
+      r.c[0].toFixed(0), r.c[1].toFixed(0), r.c[2].toFixed(0), r.c[3].toFixed(0)].join(","));
+  }
+  return lines.join("\n") + "\n";
+}
+function csvName() {
+  const p = P0;
+  return `KestrelSAT_sim_Kp${p.kp}_Ki${p.ki}_Kd${p.kd}_off${p.offset0}_${p.runtime}s.csv`;
+}
+function msg(t) { $("dataMsg").textContent = t; }
+$("dlBtn").addEventListener("click", async () => {
+  if (!rows.length) return;
+  const name = csvName(), text = toCsv();
+  if (window.claude && typeof window.claude.use === "function") {
+    try {
+      const dl = await window.claude.use("downloads");
+      if (dl) { await dl.save({ filename: name, data: text }); msg(`Saved ${name}.`); return; }
+    } catch (e) {
+      if (e && e.code === "declined") { msg("Download cancelled."); return; }
+      if (e && e.code === "rate_limited") { msg("A save prompt is already open. Finish it, then try again."); return; }
+    }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" })); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  msg(`Started download of ${name}. If nothing downloaded here, use Copy CSV and paste it into a file.`);
+});
+$("copyBtn").addEventListener("click", async () => {
+  if (!rows.length) return;
+  try { await navigator.clipboard.writeText(toCsv()); msg(`Copied ${rows.length} rows. Paste into a text file and save it as .csv.`); }
+  catch { msg("Copy was blocked in this view. Use Download data instead."); }
+});
+
+// ---------------------------------------------------------------- overlay a test CSV
+$("loadBtn").addEventListener("click", () => $("fileIn").click());
+$("clearBtn").addEventListener("click", () => { exp = null; expName = ""; $("clearBtn").hidden = true; msg("Overlay removed."); drawAll(); });
+$("fileIn").addEventListener("change", () => {
+  const f = $("fileIn").files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    try {
+      const parsed = parseTest(String(rd.result));
+      exp = parsed; expName = f.name.replace(/^[0-9a-f]{8}-/, "");
+      $("clearBtn").hidden = false;
+      msg(`Overlaid ${expName}: ${parsed.t.length} rows, ${fmt(parsed.t[parsed.t.length - 1], 1)} s. Set the initial offset to match how the test started.`);
+      drawAll();
+    } catch (e) { msg(e.message); }
+    $("fileIn").value = "";
+  };
+  rd.readAsText(f);
+});
+function parseTest(text) {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  const hIdx = lines.findIndex((l) => /time/i.test(l) && l.includes(","));
+  if (hIdx < 0) throw new Error("That file has no header row with a time column. Pick a SunTrack CSV from the SD card.");
+  const head = lines[hIdx].split(",").map((s) => s.trim());
+  const col = (re) => head.findIndex((h) => re.test(h));
+  const ti = col(/^mcu time\(ms\)$|^time\(s\)$/i);
+  if (ti < 0) throw new Error("No 'mcu time(ms)' or 'time(s)' column found.");
+  const inMs = /ms/i.test(head[ti]);
+  const idx = { err: col(/^sun_error/i), rate: col(/^gyro_Z/i), wheel: col(/^w_RW_meas/i), pwm: col(/^pwm_cmd/i) };
+  const out = { t: [], err: [], rate: [], wheel: [], pwm: [] };
+  let t0 = null;
+  for (const l of lines.slice(hIdx + 1)) {
+    const c = l.split(",");
+    const tv = parseFloat(c[ti]); if (!Number.isFinite(tv)) continue;
+    if (t0 == null) t0 = tv;
+    out.t.push(inMs ? (tv - t0) / 1000 : tv - t0);
+    for (const k of ["err", "rate", "wheel", "pwm"]) out[k].push(idx[k] >= 0 ? parseFloat(c[idx[k]]) : NaN);
+  }
+  if (out.t.length < 2) throw new Error("No data rows found in that file.");
+  return out;
+}
+
+// ---------------------------------------------------------------- start
+buildForm();
+if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) $("speed").value = "0";
+const redraw = () => { if (rows.length) drawAll(); };
+new ResizeObserver(redraw).observe(document.querySelector(".app"));
+if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redraw);
+new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(redraw);
+run();
+</script>

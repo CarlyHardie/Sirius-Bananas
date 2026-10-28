@@ -50,6 +50,7 @@ Firmware is a single-threaded Arduino `setup()`/`loop()` program in `src/main.cp
 Supporting files:
 - `include/definitions.h`: all pin assignments and constants (SD chip select, SPI, XBee, sun sensors, motor PWM, encoder, `CPR`, `MOTOR_VOLTAGE`). Change hardware wiring here. It has no include guard and is included by both `.cpp` files.
 - `src/sd_funcitons.cpp` (the filename is misspelled; keep it unless renaming deliberately) implements the declarations in `include/sd_functions.h`. It owns the `SdFat` object privately. `sd_createDataFile(preamble)` auto-numbers files as `<preamble>_dataNNN.csv`, with the preamble truncated to 12 characters for FAT compatibility.
+- `Simulation/SunTrackSim.html`: a standalone browser simulator of command 10's PID (mode 0 only; scan, hold and search are not modelled). It uses the firmware's gains, units and sign conventions, models the 4-face sun sensor, wheel deadband and motor lag, and exports/overlays CSVs with the SunTrack column names. Default inertias are estimates fitted to SunTrack_data004 (0.34 deg/s per wheel RPM). Keep it in sync if the controller math in `sun_tracking_test()` changes.
 - `lib/INA238-master/`: a vendored INA238 current monitor library that is not used by `main.cpp`. Treat it as third-party code.
 
 Hardware: ICM-20948 IMU (I2C), MAX17048 fuel gauge (I2C 0x36), TB9051FTG motor driver plus quadrature encoder (reaction wheel), 4-channel analog sun sensor, XBee radio, microSD over SPI, onboard WS2812 RGB LED (status colors: red startup, green idle, orange Lab 6, cyan Lab 7A, magenta Lab 7B).

@@ -92,3 +92,13 @@ We changed:   <your edits>
 Verified:     <hardware test and result; the agent could only syntax-check and replay the rule on logged data>
 Issue found:  data038 looped 0 -> 1 -> 2 -> 0 fourteen times in 27 s. Scan (0.15) turned the satellite only ~2 dps, and a 25 count dip at ~300 counts (9% of the brightest face) was taken for the peak. After the change: <did it get through the -X view and stop at the brightest point?>
 
+## 2026-10-28 · Sun tracking simulator (HTML)
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked for an HTML simulation of the control system with editable parameters, a visual of the satellite and Sun, and CSV export, from a photo of the setup and a whiteboard sketch
+Agent made:   Simulation/SunTrackSim.html (PID of command 10, 4-face sun sensor model, wheel deadband and lag, plots, CSV export, overlay of a test CSV)
+We changed:   <your edits, e.g. measured inertias>
+Verified:     <compare against a test run; the agent checked the script parses, ran the physics in Node, and looked at one screenshot>
+Issue found:  <where the simulation and the test disagree>
+
