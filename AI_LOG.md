@@ -142,3 +142,13 @@ We changed:   <your edits>
 Verified:     <compare the mode plot with a test CSV overlay; the agent ran the logic in Node and looked at one screenshot>
 Issue found:  In the simulation, scan/hold/search ends about 5 deg from the lamp from every start angle tried (PID alone: 32 deg). With a very dim lamp the -X face never reaches TRACK_PEAK_MIN_COUNT, scan never starts and it loops between approach and search at the edge of the view.
 
+
+## 2026-10-30 · Solar panel power back in the sun tracking test
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked to show the IV data on KestrelSAT as power (V x I) and add power, I and V columns to the CSV
+Agent made:   sun_tracking_test() reads the INA238 every sample (same calls as Lab 3), power = panel_V x panel_I_mA (mW); CSV gets panel_V(V), panel_I(mA), panel_P(mW) at the end (22 columns); live XBee line adds ",P_mW:<power>"
+We changed:   <your edits>
+Verified:     <does the build pass? does P_mW go up when the panel faces the lamp? is the current positive or negative?>
+Issue found:  <anything>

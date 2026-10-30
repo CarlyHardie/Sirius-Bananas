@@ -190,7 +190,7 @@ void setup() {
   // Initialize INA238 (solar panel current/voltage)
   //----------------------------------------------
   if (!ina.begin()) {
-    Serial.println("[WARN] INA238 not detected. Sun tracking test (cmd 10) will log 0 for panel V and I.");
+    Serial.println("[WARN] INA238 not detected. Sun tracking test (cmd 10) will log 0 for panel V, I and power.");
   } else {
     ina.setShunt(INA238_SHUNT_OHMS, INA238_MAX_CURRENT_A); // same settings as Lab 3
     ina.setAveragingCount(INA2XX_COUNT_128);
@@ -1339,8 +1339,8 @@ float wrap_180(float angle_deg) {
  * in the direction it was already turning, until a face sees the light again. It gives up after TRACK_SEARCH_MAX_MS so it cannot spin forever (for example if
  * the lamp is off).
  *
- * Logs to a new SD file: wheel speed commanded and measured (RPM), panel voltage and current,
- * sun position (sun_X, sun_Y, sun_direction, error), and spin rate (gyro Z).
+ * Logs to a new SD file: wheel speed commanded and measured (RPM), sun position (sun_direction, error),
+ * spin rate (gyro Z), and the solar panel voltage, current and power (power = voltage x current).
  * Ends when the user sends 'X' or after TRACK_MAX_TIME_MS. The wheel is always stopped at the end.
  *
  * @note Wheel speed (RPM) is calculated the same way as lab7_run_test_B().
@@ -1350,7 +1350,7 @@ float wrap_180(float angle_deg) {
 void sun_tracking_test() {
   char file_name[40];
   if (sd_createDataFile(&dataFile, "SunTrack")) {
-    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,p_term,i_term,d_term,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count),mode,bright_f(count),bright_max(count),angle_since_peak(deg),centered");
+    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,p_term,i_term,d_term,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count),mode,bright_f(count),bright_max(count),angle_since_peak(deg),centered,panel_V(V),panel_I(mA),panel_P(mW)");
     dataFile.flush();
     dataFile.getName(file_name, sizeof(file_name));
     Xbee.print("[INFO] Data file created successfully: ");
@@ -1418,6 +1418,12 @@ void sun_tracking_test() {
       read_sun_sensor();
       imu_sensor.getAGMT();
       gyro_Z = imu_sensor.gyrZ();
+
+      // Solar panel voltage and current (INA238, same as Lab 3). Power = voltage x current.
+      // volts x milliamps = milliwatts. If the INA238 was not found in setup(), all three are 0.
+      float panel_V = ina_ok ? (ina.getBusVoltage_V() + ina.getShuntVoltage_mV() / 1000.0) : 0.0;
+      float panel_I_mA = ina_ok ? ina.getCurrent_mA() : 0.0;
+      float panel_P_mW = panel_V * panel_I_mA;
 
       // Control:
       float sun_error = wrap_180(sun_direction - SUN_TARGET_ANGLE_DEG);
@@ -1630,7 +1636,13 @@ void sun_tracking_test() {
       dataFile.print(",");
       dataFile.print(angle_since_peak);
       dataFile.print(",");
-      dataFile.println(centered ? 1 : 0);
+      dataFile.print(centered ? 1 : 0);
+      dataFile.print(",");
+      dataFile.print(panel_V, 3);
+      dataFile.print(",");
+      dataFile.print(panel_I_mA, 3);
+      dataFile.print(",");
+      dataFile.println(panel_P_mW, 3);
 
       // Print to USB Serial:
       Serial.print("t:");
@@ -1662,10 +1674,11 @@ void sun_tracking_test() {
         dataFile.flush(); // save file every 10 test points
       }
 
-      // Live telemetry for the ground station: sun direction and the reading of each of the 4 photo sensors (Name:value,Name:value)
+      // Live telemetry for the ground station: sun direction, the reading of each of the 4 photo sensors,
+      // and the solar panel power in mW (Name:value,Name:value)
       if (test_point_count % TRACK_XBEE_EVERY == 0) {
-        char live[64];
-        snprintf(live, sizeof(live), "sDir:%.1f,s+X:%.0f,s-X:%.0f,s+Y:%.0f,s-Y:%.0f", sun_direction, sun_plusX, sun_minusX, sun_plusY, sun_minusY);
+        char live[96];
+        snprintf(live, sizeof(live), "sDir:%.1f,s+X:%.0f,s-X:%.0f,s+Y:%.0f,s-Y:%.0f,P_mW:%.1f", sun_direction, sun_plusX, sun_minusX, sun_plusY, sun_minusY, panel_P_mW);
         Xbee.println(live);
         Serial.println(live); // mirror the XBee message to Serial
       }
