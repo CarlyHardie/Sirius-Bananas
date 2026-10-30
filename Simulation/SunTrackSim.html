@@ -216,6 +216,9 @@ const PARAMS = [
   { g: "g-modes", id: "minPwm", label: "TRACK_MIN_PWM", unit: "pwm", def: 0.12, min: 0, max: 1, step: 0.01 },
   { g: "g-modes", id: "dead", label: "TRACK_HOLD_DEADZONE_DEG", unit: "deg", def: 3, min: 0, max: 45, step: 0.5 },
   { g: "g-modes", id: "holdKi", label: "TRACK_HOLD_KI", unit: "per deg·s", def: 0.002, min: 0, max: 1, step: 0.0005 },
+  { g: "g-modes", id: "stopX", label: "TRACK_STOP_ON_CROSSING", type: "select", def: "1",
+    options: [["1", "1: stop when the error changes sign"], ["0", "0: only the brightness drop"]] },
+  { g: "g-modes", id: "crossZeros", label: "TRACK_CROSSING_MAX_ZEROS", unit: "readings", def: 3, min: 0, max: 100, step: 1 },
   { g: "g-modes", id: "search", label: "TRACK_SEARCH_WHEN_LOST", type: "select", def: "1",
     options: [["1", "1: search on"], ["0", "0: wheel stops"]] },
   { g: "g-modes", id: "lostN", label: "TRACK_LOST_SAMPLES", unit: "readings", def: 2, min: 1, max: 100, step: 1 },
@@ -317,7 +320,7 @@ function simulate(p) {
   let track_integral = 0, track_mode = 0, bright_f = 0, bright_max = 0, angle_since_peak = 0;
   let scan_sign = 1, last_motion_sign = 1, in_view_count = 0, out_view_count = 0;
   let lost_count = 0, search_active = false, search_gave_up = false, last_valid_pwm = 0;
-  let run_peak_any = 0, hold_integral = 0, search_pwm = 0, search_start = 0;
+  let run_peak_any = 0, hold_integral = 0, search_pwm = 0, search_start = 0, last_error_sign = 0, zero_error_count = 0;
   const TS = Number(p.trackSign);
   let seed = 12345; // fixed seed so a run with gyro noise is repeatable
   const rand = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
@@ -331,6 +334,17 @@ function simulate(p) {
       const gyro_Z = ws + (p.gnoise > 0 ? p.gnoise * gauss() : 0);
       const sun_error = sens.meas, sun_visible = sens.visible;
       let P = 0, I = 0, D = 0, pwm = 0, angle_error = 0, centered = false, searching = false;
+
+      // sun_error changed sign (a few exact 0s in between are fine, a long run of 0s is a blind zone and does not count)
+      let sign_now = 0;
+      if (sun_visible && sun_error > 0) sign_now = 1;
+      if (sun_visible && sun_error < 0) sign_now = -1;
+      let error_crossed = false;
+      if (sign_now === 0) zero_error_count++;
+      else {
+        if (last_error_sign !== 0 && sign_now !== last_error_sign && zero_error_count <= p.crossZeros) error_crossed = true;
+        last_error_sign = sign_now; zero_error_count = 0;
+      }
 
       const brightest_face = Math.max(sun_plusX, sun_minusX, sun_plusY, sun_minusY);
       if (brightest_face > run_peak_any) run_peak_any = brightest_face;
@@ -351,6 +365,9 @@ function simulate(p) {
           if (track_mode === 1 && bright_f < p.drop * bright_max &&
               bright_max >= p.peakFrac * run_peak_any && Math.abs(gyro_Z) > p.peakRate) { // SCAN -> HOLD
             track_mode = 2; hold_integral = 0;
+          }
+          if (track_mode === 1 && p.stopX === "1" && error_crossed && Math.abs(gyro_Z) > p.peakRate) { // SCAN -> HOLD (early)
+            track_mode = 2; hold_integral = 0; angle_since_peak = 0;
           }
         }
       }

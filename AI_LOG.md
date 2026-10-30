@@ -162,3 +162,13 @@ Agent made:   live XBee/Serial line in sun_tracking_test() now ends ",V:<volts>,
 We changed:   <your edits>
 Verified:     <does the GCS show V and I live? any dropped or garbled characters at 10 lines/s (about 81% of the 9600 baud link)?>
 Issue found:  <anything>
+
+## 2026-10-30 · Stop the scan when the sun error changes sign (less overshoot)
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked how to change the control to have no overshoot, based on SunTrack_data114 (and data099, data104)
+Agent made:   SCAN -> HOLD now also happens when sun_error changes sign (TRACK_STOP_ON_CROSSING 1, TRACK_CROSSING_MAX_ZEROS 3); HOLD returns to the crossing point. Same rule ported to Simulation/SunTrackSim.html. Cause found: the -X reading is flat on top (3705 counts in data114, 4095 in data099), so the 7% drop rule fires 40-70 deg past the lamp
+We changed:   <your edits>
+Verified:     <does mode 2 start when sun_error crosses 0? is the overshoot (largest error on the far side) smaller than data114's 16 deg / data099's 42 deg? does the satellite still end near the lamp?>
+Issue found:  Replayed on the logs (not on hardware): fires in data099 (3.80 s, err 0.3) and data114 (3.25 s, err -0.9), not in data104. In the simulator it only helps when the Y faces read near the middle (half-angle 50: overshoot 25 -> 7-9 deg, final error 4.8 -> 6.0 deg); with a blind zone it never fires and nothing changes. Fully zero overshoot is not possible: braking from about 30 deg/s needs about 3-5 deg.

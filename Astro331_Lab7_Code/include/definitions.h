@@ -53,6 +53,8 @@
 #define TRACK_HOLD_KI           0.002  // CHECK: while holding, wheel command per (degree x second) of angle error added up, so the push grows if we stall short of the brightest point
 #define TRACK_PEAK_MIN_FRACTION 0.30   // "passed the brightest point" only counts if the best -X reading is at least this fraction of the brightest face reading seen in the run
 #define TRACK_PEAK_MIN_RATE_DPS 5.0    // ...and only while the satellite is really turning (more than this many deg/s)
+#define TRACK_STOP_ON_CROSSING  1      // 1 = in SCAN, go to HOLD as soon as sun_error changes sign (the sun sensor says we are pointing at the sun), without waiting for the -X reading to drop. 0 = only use the brightness drop
+#define TRACK_CROSSING_MAX_ZEROS 3     // ...but only if at most this many readings in a row were exactly 0 between the two signs (a long run of 0s is a blind zone, not the middle)
 
 // Searching when no face sees the light (command 10):
 #define TRACK_SEARCH_WHEN_LOST  1      // 1 = if no face sees the light, keep turning the way we were going until one does. 0 = hold the wheel at 0

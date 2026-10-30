@@ -1331,6 +1331,8 @@ float wrap_180(float angle_deg) {
  *               The gyro tells how far we turned since then (angle_since_peak). A PD controller turns us
  *               back by that angle and holds there. If the reading gets brighter than before, the brightest
  *               point is updated.
+ *               HOLD also starts early if sun_error changes sign while scanning (TRACK_STOP_ON_CROSSING = 1): the sun
+ *               sensor then says we are pointing at the lamp, and that point is the one HOLD returns to.
  * If the -X face stops seeing the light for TRACK_OUT_VIEW_SAMPLES readings, we go back to mode 0.
  *
  * Searching (TRACK_SEARCH_WHEN_LOST = 1, logged as mode 3). If NO face sees the light (S_mag < SUN_MIN_SIGNAL) for
@@ -1390,6 +1392,8 @@ void sun_tracking_test() {
   bool search_gave_up = false;   // true after the search ran out of time
   float last_valid_pwm = 0.0;    // the last wheel command given while a face could see the light
   float run_peak_any = 0.0;      // brightest reading on ANY face so far in this run (counts)
+  float last_error_sign = 0.0;   // sign (+1 or -1) of the last sun_error that was not exactly 0; 0 = none yet
+  int zero_error_count = 0;      // readings in a row where sun_error was exactly 0 (or no light)
   float hold_integral = 0.0;     // HOLD mode: angle error added up over time (degree-seconds)
   float search_pwm = 0.0;        // the wheel command held during the search
   uint32_t search_start_ms = 0;  // when the search started
@@ -1436,6 +1440,21 @@ void sun_tracking_test() {
       float angle_error = 0.0; // HOLD mode: how far we are from the brightest point (degrees)
       bool centered = false;   // true when we are stopped at the brightest point
       bool searching = false;  // true when the wheel command comes from the search for light
+
+      // Did sun_error just change sign? (the lamp went past the target direction). sun_error is exactly 0 while only one
+      // face sees the light. A few 0s in a row can sit right at the middle, but a long run of 0s is a blind zone, and
+      // coming out of a blind zone is not the same as crossing the middle, so that does not count.
+      float sign_now = 0.0;
+      if (sun_visible && sun_error > 0.0) sign_now = 1.0;
+      if (sun_visible && sun_error < 0.0) sign_now = -1.0;
+      bool error_crossed = false;
+      if (sign_now == 0.0) {
+        zero_error_count++;
+      } else {
+        if (last_error_sign != 0.0 && sign_now != last_error_sign && zero_error_count <= TRACK_CROSSING_MAX_ZEROS) error_crossed = true;
+        last_error_sign = sign_now;
+        zero_error_count = 0;
+      }
 
       // Brightest reading on any face so far (a real peak should be a good fraction of this)
       float brightest_face = fmaxf(fmaxf(sun_plusX, sun_minusX), fmaxf(sun_plusY, sun_minusY));
@@ -1486,6 +1505,16 @@ void sun_tracking_test() {
             hold_integral = 0.0;
             Serial.println("[INFO] Passed the brightest point: going back to it.");
             Xbee.println("[INFO] Passed the brightest point: going back to it.");
+          }
+          // SCAN -> HOLD (early): the sun sensor says the lamp just crossed the target direction. Stop here instead of
+          // waiting for the -X reading to drop (a bright lamp makes that reading flat on top, so the drop comes too late).
+          // The point where we crossed is the one HOLD returns to.
+          if (track_mode == 1 && TRACK_STOP_ON_CROSSING == 1 && error_crossed && fabs(gyro_Z) > TRACK_PEAK_MIN_RATE_DPS) {
+            track_mode = 2;
+            hold_integral = 0.0;
+            angle_since_peak = 0.0;
+            Serial.println("[INFO] Sun direction crossed the target: stopping here.");
+            Xbee.println("[INFO] Sun direction crossed the target: stopping here.");
           }
         }
       }
