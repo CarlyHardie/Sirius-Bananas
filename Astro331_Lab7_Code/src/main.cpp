@@ -1675,10 +1675,11 @@ void sun_tracking_test() {
       }
 
       // Live telemetry for the ground station: sun direction, the reading of each of the 4 photo sensors,
-      // and the solar panel power in mW (Name:value,Name:value)
+      // and the solar panel voltage (V), current (mA) and power (mW) (Name:value,Name:value)
       if (test_point_count % TRACK_XBEE_EVERY == 0) {
-        char live[96];
-        snprintf(live, sizeof(live), "sDir:%.1f,s+X:%.0f,s-X:%.0f,s+Y:%.0f,s-Y:%.0f,P_mW:%.1f", sun_direction, sun_plusX, sun_minusX, sun_plusY, sun_minusY, panel_P_mW);
+        char live[128];
+        snprintf(live, sizeof(live), "sDir:%.1f,s+X:%.0f,s-X:%.0f,s+Y:%.0f,s-Y:%.0f,V:%.2f,I_mA:%.2f,P_mW:%.2f",
+                 sun_direction, sun_plusX, sun_minusX, sun_plusY, sun_minusY, panel_V, panel_I_mA, panel_P_mW);
         Xbee.println(live);
         Serial.println(live); // mirror the XBee message to Serial
       }

@@ -152,3 +152,13 @@ Agent made:   sun_tracking_test() reads the INA238 every sample (same calls as L
 We changed:   <your edits>
 Verified:     <does the build pass? does P_mW go up when the panel faces the lamp? is the current positive or negative?>
 Issue found:  <anything>
+
+## 2026-10-30 · Live panel voltage and current on the ground station
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked to show the volts and current on KestrelSAT as the data is taken
+Agent made:   live XBee/Serial line in sun_tracking_test() now ends ",V:<volts>,I_mA:<mA>,P_mW:<mW>" (was only P_mW); buffer 96 -> 128 bytes
+We changed:   <your edits>
+Verified:     <does the GCS show V and I live? any dropped or garbled characters at 10 lines/s (about 81% of the 9600 baud link)?>
+Issue found:  <anything>
