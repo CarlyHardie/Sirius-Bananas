@@ -198,7 +198,7 @@ const PARAMS = [
   { g: "g-body", id: "wmax", label: "Max wheel speed", unit: "RPM (375 measured)", def: 375, min: 10, max: 20000, step: 1 },
   { g: "g-ctrl", id: "kp", label: "Proportional, Kp", unit: "per deg", def: 0.015, min: 0, max: 1, step: 0.0005 },
   { g: "g-ctrl", id: "ki", label: "Integral, Ki", unit: "per deg·s", def: 0.001, min: 0, max: 1, step: 0.0001 },
-  { g: "g-ctrl", id: "kd", label: "Derivative, Kd", unit: "per deg/s (−0.01 = your first, backwards D)", def: 0.01, min: -1, max: 1, step: 0.001 },
+  { g: "g-ctrl", id: "kd", label: "Derivative, Kd", unit: "per deg/s (0 = D off; −0.01 = your first, backwards D)", def: 0, min: -1, max: 1, step: 0.001 },
   { g: "g-ic", id: "offset0", label: "Initial offset from Sun", unit: "deg, −180 to 180", def: 45, min: -180, max: 180, step: 1 },
   { g: "g-ic", id: "rate0", label: "Initial spin rate", unit: "deg/s", def: 0, min: -360, max: 360, step: 1 },
   { g: "g-ic", id: "runtime", label: "Run time", unit: "s", def: 60, min: 1, max: 600, step: 1 },
