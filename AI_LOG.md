@@ -172,3 +172,13 @@ Agent made:   SCAN -> HOLD now also happens when sun_error changes sign (TRACK_S
 We changed:   <your edits>
 Verified:     <does mode 2 start when sun_error crosses 0? is the overshoot (largest error on the far side) smaller than data114's 16 deg / data099's 42 deg? does the satellite still end near the lamp?>
 Issue found:  Replayed on the logs (not on hardware): fires in data099 (3.80 s, err 0.3) and data114 (3.25 s, err -0.9), not in data104. In the simulator it only helps when the Y faces read near the middle (half-angle 50: overshoot 25 -> 7-9 deg, final error 4.8 -> 6.0 deg); with a blind zone it never fires and nothing changes. Fully zero overshoot is not possible: braking from about 30 deg/s needs about 3-5 deg.
+
+## 2026-11-03 · Higher Kp, smaller I zone, scan/hold off
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked how to change the PID to have no overshoot, then to apply the change
+Agent made:   definitions.h: TRACK_KP 0.005 -> 0.015, TRACK_KI 0.0005 -> 0.001, TRACK_I_ZONE_DEG 90 -> 20, TRACK_CENTER_ON_PEAK 1 -> 0. Same defaults in Simulation/SunTrackSim.html
+We changed:   <your edits>
+Verified:     <does the largest error on the far side of the lamp stay near 0? does pwm_cmd flip sign back and forth (Kp too high)? is the final error small? how long to get within 10 deg (simulator: 5-6 s)?>
+Issue found:  Simulator only, no hardware test. With the 50 deg sensor (like data099/104/114) overshoot is 0 deg and final error 1.2 deg. With the simulator's default 23 deg sensor (blind zone) PID alone stops 27-32 deg short, so with a dim lamp set TRACK_CENTER_ON_PEAK back to 1 (overshoot about 14 deg). The simulator has no sensor noise or offset. In data104 the sun error read 5-8 deg while the -X face was at its brightest, so the sensor's "center" may be a few degrees off. The sign-change stop rule from the previous commit is still in the code but does nothing while scan is off.
