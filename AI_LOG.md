@@ -182,3 +182,13 @@ Agent made:   definitions.h: TRACK_KP 0.005 -> 0.015, TRACK_KI 0.0005 -> 0.001, 
 We changed:   <your edits>
 Verified:     <does the largest error on the far side of the lamp stay near 0? does pwm_cmd flip sign back and forth (Kp too high)? is the final error small? how long to get within 10 deg (simulator: 5-6 s)?>
 Issue found:  Simulator only, no hardware test. With the 50 deg sensor (like data099/104/114) overshoot is 0 deg and final error 1.2 deg. With the simulator's default 23 deg sensor (blind zone) PID alone stops 27-32 deg short, so with a dim lamp set TRACK_CENTER_ON_PEAK back to 1 (overshoot about 14 deg). The simulator has no sensor noise or offset. In data104 the sun error read 5-8 deg while the -X face was at its brightest, so the sensor's "center" may be a few degrees off. The sign-change stop rule from the previous commit is still in the code but does nothing while scan is off.
+
+## 2026-11-03 · D term turned off (TRACK_KD = 0)
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked why KestrelSAT stops at the corner in the PID-only run, then asked to make the D term 0
+Agent made:   definitions.h TRACK_KD 0.01 -> 0.0 (the D line stays in main.cpp, it just multiplies by 0). Simulation/SunTrackSim.html default Kd 0.01 -> 0
+We changed:   <your edits>
+Verified:     <does the satellite still stop at the corner? how much does it overshoot with no braking? does pwm_cmd swing? is the largest error on the far side of the lamp small?>
+Issue found:  Cause of the corner stop (from SunTrack no-modes CSV, gyro and video): the sun sensor read 6.8 deg when ~38 deg were left (faces are not cosine-shaped), so P was ~0.1, D braked on the real spin (-0.48 at 0.9 s) and the satellite stopped at ~48 deg of 80 deg turn, then waited ~10 s for the I term. The simulator no-modes CSV had D = 0 all run (Kd 0), which is why it did not stop. Risk with D off: in a scratch simulator with a slower wheel (tau 0.8) Kd 0 overshoots by about 26 deg, and the real wheel is weaker than the simulator's. The sun-sensor error itself is still compressed near the lamp (not fixed).
