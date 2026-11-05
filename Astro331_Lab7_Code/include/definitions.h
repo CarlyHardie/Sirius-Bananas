@@ -31,9 +31,9 @@
 #define SUN_TARGET_ANGLE_DEG    180.0  // sun_direction value when the solar panel faces the sun
 #define SUN_TOLERANCE_DEG       45.0   // goal: stay within +/- this angle of the target
 #define SUN_MIN_SIGNAL          30.0   // CHECK: if the 4 sun sensor readings add up to less than this, "no sun" (dark reads exactly 0 in the logs)
-#define TRACK_KP                0.015  // wheel command (0 to 1) per degree of sun angle error. Was 0.005: too weak to move the wheel on a small error (it needs about 0.07). Simulator: 0.015 gave no overshoot; halve it if pwm_cmd flips sign back and forth
+#define TRACK_KP                0.03  // wheel command (0 to 1) per degree of sun angle error. Was 0.005: too weak to move the wheel on a small error (it needs about 0.07). Simulator: 0.015 gave no overshoot; halve it if pwm_cmd flips sign back and forth
 #define TRACK_KD                0.0    // wheel command (0 to 1) per deg/s of spin rate. 0.0 = D term OFF. Was 0.01: in SunTrack no-modes the sun error read 6 deg when ~38 deg were left, so P was tiny while D braked on the real spin rate and the satellite stopped at the corner. Without D nothing brakes early; if it overshoots or swings, try 0.003 to 0.005. Hold mode (scan on) uses this too
-#define TRACK_KI                0.001  // wheel command (0 to 1) per (degree x second) of accumulated error. Start here; double if the offset goes away too slowly, halve if it swings. 0.0 = integral OFF
+#define TRACK_KI                0.00  // wheel command (0 to 1) per (degree x second) of accumulated error. Start here; double if the offset goes away too slowly, halve if it swings. 0.0 = integral OFF
 #define TRACK_I_LIMIT           0.2    // the integral term can never push the wheel command more than this (0 to 1)
 #define TRACK_I_ZONE_DEG        20.0   // the integral only builds up when the sun error is smaller than this (degrees). Was 90: a big turn built up the I term and caused overshoot
 #define TRACK_SIGN              1.0    // CHECK: change to -1.0 if the satellite turns AWAY from the sun
