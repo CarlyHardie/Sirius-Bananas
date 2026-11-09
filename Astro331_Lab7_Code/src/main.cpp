@@ -190,7 +190,7 @@ void setup() {
   // Initialize INA238 (solar panel current/voltage)
   //----------------------------------------------
   if (!ina.begin()) {
-    Serial.println("[WARN] INA238 not detected. Sun tracking test (cmd 10) will log 0 for panel V and I.");
+    Serial.println("[WARN] INA238 not detected. Sun tracking test (cmd 10) will log 0 for panel V, I and power.");
   } else {
     ina.setShunt(INA238_SHUNT_OHMS, INA238_MAX_CURRENT_A); // same settings as Lab 3
     ina.setAveragingCount(INA2XX_COUNT_128);
@@ -1255,7 +1255,7 @@ void stream_RWspeed()
  * @brief Reads the 4 sun sensor channels and finds the sun direction.
  *
  * Averages n_sun_sensor_reads readings per channel, then sets the globals
- * sun_plusX, sun_minusX, sun_plusY, sun_minusY, S_mag, sun_X, sun_Y and
+ * sun_plusX, sun_minusX, sun_plusY, sun_minusY, S_mag, sun_X (= +X - -X, counts), sun_Y (= +Y - -Y, counts) and
  * sun_direction (0 to 360 degrees). Same math as lab7_run_test_B().
  * If the total signal is zero, sun_X and sun_Y are set to 0 (avoids dividing by zero).
  */
@@ -1275,14 +1275,11 @@ void read_sun_sensor() {
   sun_plusY /= n_sun_sensor_reads;
   sun_minusY /= n_sun_sensor_reads;
 
-  S_mag = sun_plusX + sun_minusX + sun_plusY + sun_minusY;
-  if (S_mag > 0.0) {
-    sun_X = (sun_plusX - sun_minusX) / S_mag;
-    sun_Y = (sun_plusY - sun_minusY) / S_mag;
-  } else {
-    sun_X = 0.0;
-    sun_Y = 0.0;
-  }
+  S_mag = sun_plusX + sun_minusX + sun_plusY + sun_minusY; // total light
+  // Subtract opposite faces: room light hits both about equally, so it cancels and only the sun is left.
+  // sun_X and sun_Y are in sensor counts (not scaled to -1...+1)
+  sun_X = sun_plusX - sun_minusX;
+  sun_Y = sun_plusY - sun_minusY;
   sun_direction = (atan2(sun_Y, sun_X) * RAD_TO_DEG);
   if (sun_direction < 0) {
     sun_direction += 360; // Adjust to range 0-360
@@ -1327,9 +1324,15 @@ float wrap_180(float angle_deg) {
  *   1 SCAN:     turn gently (TRACK_SCAN_PWM) in the direction we were already going, remembering the
  *               brightest -X reading (bright_max). Brighter = closer to the middle of the view.
  *   2 HOLD:     the reading has fallen below TRACK_PEAK_DROP x bright_max, so we passed the brightest point.
+ *               (This only counts if bright_max is at least TRACK_PEAK_MIN_FRACTION of the brightest face reading
+ *               seen in the run and the satellite is turning faster than TRACK_PEAK_MIN_RATE_DPS. Otherwise the
+ *               dip is just noise at the dim edge of the view, and we keep scanning.) While holding, an I term
+ *               (TRACK_HOLD_KI) adds up the angle error so the push grows if the satellite stalls short.
  *               The gyro tells how far we turned since then (angle_since_peak). A PD controller turns us
  *               back by that angle and holds there. If the reading gets brighter than before, the brightest
  *               point is updated.
+ *               HOLD also starts early if sun_error changes sign while scanning (TRACK_STOP_ON_CROSSING = 1): the sun
+ *               sensor then says we are pointing at the lamp, and that point is the one HOLD returns to.
  * If the -X face stops seeing the light for TRACK_OUT_VIEW_SAMPLES readings, we go back to mode 0.
  *
  * Searching (TRACK_SEARCH_WHEN_LOST = 1, logged as mode 3). If NO face sees the light (S_mag < SUN_MIN_SIGNAL) for
@@ -1338,8 +1341,8 @@ float wrap_180(float angle_deg) {
  * in the direction it was already turning, until a face sees the light again. It gives up after TRACK_SEARCH_MAX_MS so it cannot spin forever (for example if
  * the lamp is off).
  *
- * Logs to a new SD file: wheel speed commanded and measured (RPM), panel voltage and current,
- * sun position (sun_X, sun_Y, sun_direction, error), and spin rate (gyro Z).
+ * Logs to a new SD file: wheel speed commanded and measured (RPM), sun position (sun_direction, error),
+ * spin rate (gyro Z), and the solar panel voltage, current and power (power = voltage x current).
  * Ends when the user sends 'X' or after TRACK_MAX_TIME_MS. The wheel is always stopped at the end.
  *
  * @note Wheel speed (RPM) is calculated the same way as lab7_run_test_B().
@@ -1349,7 +1352,7 @@ float wrap_180(float angle_deg) {
 void sun_tracking_test() {
   char file_name[40];
   if (sd_createDataFile(&dataFile, "SunTrack")) {
-    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),panel_V(V),panel_I(mA),sun_X,sun_Y,sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,in_tolerance,p_term,i_term,d_term,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count),S_mag(count),mode,bright_f(count),bright_max(count),angle_since_peak(deg),centered");
+    dataFile.println("mcu time(ms),w_RW_cmd(RPM),w_RW_meas(RPM),sun_direction(deg),sun_error(deg),gyro_Z(dps),pwm_cmd,p_term,i_term,d_term,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count),mode,bright_f(count),bright_max(count),angle_since_peak(deg),centered,panel_V(V),panel_I(mA),panel_P(mW)");
     dataFile.flush();
     dataFile.getName(file_name, sizeof(file_name));
     Xbee.print("[INFO] Data file created successfully: ");
@@ -1388,6 +1391,10 @@ void sun_tracking_test() {
   bool search_active = false;    // true while we are searching for the light
   bool search_gave_up = false;   // true after the search ran out of time
   float last_valid_pwm = 0.0;    // the last wheel command given while a face could see the light
+  float run_peak_any = 0.0;      // brightest reading on ANY face so far in this run (counts)
+  float last_error_sign = 0.0;   // sign (+1 or -1) of the last sun_error that was not exactly 0; 0 = none yet
+  int zero_error_count = 0;      // readings in a row where sun_error was exactly 0 (or no light)
+  float hold_integral = 0.0;     // HOLD mode: angle error added up over time (degree-seconds)
   float search_pwm = 0.0;        // the wheel command held during the search
   uint32_t search_start_ms = 0;  // when the search started
   int test_point_count = 0;
@@ -1415,8 +1422,12 @@ void sun_tracking_test() {
       read_sun_sensor();
       imu_sensor.getAGMT();
       gyro_Z = imu_sensor.gyrZ();
-      float panel_V = ina_ok ? (ina.getBusVoltage_V() + ina.getShuntVoltage_mV() / 1000.0) : 0.0; // same as Lab 3
+
+      // Solar panel voltage and current (INA238, same as Lab 3). Power = voltage x current.
+      // volts x milliamps = milliwatts. If the INA238 was not found in setup(), all three are 0.
+      float panel_V = ina_ok ? (ina.getBusVoltage_V() + ina.getShuntVoltage_mV() / 1000.0) : 0.0;
       float panel_I_mA = ina_ok ? ina.getCurrent_mA() : 0.0;
+      float panel_P_mW = panel_V * panel_I_mA;
 
       // Control:
       float sun_error = wrap_180(sun_direction - SUN_TARGET_ANGLE_DEG);
@@ -1429,6 +1440,25 @@ void sun_tracking_test() {
       float angle_error = 0.0; // HOLD mode: how far we are from the brightest point (degrees)
       bool centered = false;   // true when we are stopped at the brightest point
       bool searching = false;  // true when the wheel command comes from the search for light
+
+      // Did sun_error just change sign? (the lamp went past the target direction). sun_error is exactly 0 while only one
+      // face sees the light. A few 0s in a row can sit right at the middle, but a long run of 0s is a blind zone, and
+      // coming out of a blind zone is not the same as crossing the middle, so that does not count.
+      float sign_now = 0.0;
+      if (sun_visible && sun_error > 0.0) sign_now = 1.0;
+      if (sun_visible && sun_error < 0.0) sign_now = -1.0;
+      bool error_crossed = false;
+      if (sign_now == 0.0) {
+        zero_error_count++;
+      } else {
+        if (last_error_sign != 0.0 && sign_now != last_error_sign && zero_error_count <= TRACK_CROSSING_MAX_ZEROS) error_crossed = true;
+        last_error_sign = sign_now;
+        zero_error_count = 0;
+      }
+
+      // Brightest reading on any face so far (a real peak should be a good fraction of this)
+      float brightest_face = fmaxf(fmaxf(sun_plusX, sun_minusX), fmaxf(sun_plusY, sun_minusY));
+      if (brightest_face > run_peak_any) run_peak_any = brightest_face;
 
       // Remember which way we were turning (used to keep scanning the same way)
       if (fabs(gyro_Z) > 3.0) last_motion_sign = (gyro_Z > 0) ? 1.0 : -1.0;
@@ -1467,10 +1497,24 @@ void sun_tracking_test() {
           } else {
             angle_since_peak += gyro_Z * dt_ctrl_s; // degrees turned since the brightest point
           }
-          if (track_mode == 1 && bright_f < TRACK_PEAK_DROP * bright_max) { // SCAN -> HOLD: we passed the peak
+          // SCAN -> HOLD: we passed the peak. A dip only counts if the "peak" was a real one (bright enough compared
+          // with the brightest face reading in the run) and the satellite is really turning, not stalled at a dim edge
+          if (track_mode == 1 && bright_f < TRACK_PEAK_DROP * bright_max &&
+              bright_max >= TRACK_PEAK_MIN_FRACTION * run_peak_any && fabs(gyro_Z) > TRACK_PEAK_MIN_RATE_DPS) {
             track_mode = 2;
+            hold_integral = 0.0;
             Serial.println("[INFO] Passed the brightest point: going back to it.");
             Xbee.println("[INFO] Passed the brightest point: going back to it.");
+          }
+          // SCAN -> HOLD (early): the sun sensor says the lamp just crossed the target direction. Stop here instead of
+          // waiting for the -X reading to drop (a bright lamp makes that reading flat on top, so the drop comes too late).
+          // The point where we crossed is the one HOLD returns to.
+          if (track_mode == 1 && TRACK_STOP_ON_CROSSING == 1 && error_crossed && fabs(gyro_Z) > TRACK_PEAK_MIN_RATE_DPS) {
+            track_mode = 2;
+            hold_integral = 0.0;
+            angle_since_peak = 0.0;
+            Serial.println("[INFO] Sun direction crossed the target: stopping here.");
+            Xbee.println("[INFO] Sun direction crossed the target: stopping here.");
           }
         }
       }
@@ -1493,9 +1537,21 @@ void sun_tracking_test() {
         // sun_direction, so the error is the opposite of the angle turned since the peak)
         track_integral = 0.0;
         angle_error = -angle_since_peak;
+        // I term: add up the angle error, so the push keeps growing if we stall short of the brightest point
+        if (fabs(angle_error) > TRACK_HOLD_DEADZONE_DEG) {
+          hold_integral += angle_error * dt_ctrl_s;
+        } else {
+          hold_integral = 0.0; // close enough: start over
+        }
+        if (TRACK_HOLD_KI > 0.0) { // keep the I term's push below TRACK_I_LIMIT
+          float hold_integral_max = TRACK_I_LIMIT / TRACK_HOLD_KI;
+          if (hold_integral > hold_integral_max) hold_integral = hold_integral_max;
+          if (hold_integral < -hold_integral_max) hold_integral = -hold_integral_max;
+        }
         p_term = TRACK_KP * angle_error;
+        i_term = TRACK_HOLD_KI * hold_integral;
         d_term = TRACK_KD * TRACK_GYRO_SIGN * gyro_Z;
-        pwm_cmd = TRACK_SIGN * (p_term + d_term);
+        pwm_cmd = TRACK_SIGN * (p_term + i_term + d_term);
         // The wheel will not start moving on a tiny command: if we are off the peak and standing still, give it a push
         if (fabs(angle_error) > TRACK_HOLD_DEADZONE_DEG && fabs(pwm_cmd) < TRACK_MIN_PWM && fabs(gyro_Z) < 3.0) {
           pwm_cmd = ((TRACK_SIGN * angle_error) >= 0 ? 1.0 : -1.0) * TRACK_MIN_PWM;
@@ -1579,14 +1635,6 @@ void sun_tracking_test() {
       dataFile.print(",");
       dataFile.print(w_RW_meas);
       dataFile.print(",");
-      dataFile.print(panel_V, 3);
-      dataFile.print(",");
-      dataFile.print(panel_I_mA, 3);
-      dataFile.print(",");
-      dataFile.print(sun_X, 4);
-      dataFile.print(",");
-      dataFile.print(sun_Y, 4);
-      dataFile.print(",");
       dataFile.print(sun_direction);
       dataFile.print(",");
       dataFile.print(sun_error);
@@ -1594,8 +1642,6 @@ void sun_tracking_test() {
       dataFile.print(gyro_Z);
       dataFile.print(",");
       dataFile.print(pwm_cmd, 4);
-      dataFile.print(",");
-      dataFile.print(in_tolerance ? 1 : 0);
       dataFile.print(",");
       dataFile.print(p_term, 4);
       dataFile.print(",");
@@ -1611,8 +1657,6 @@ void sun_tracking_test() {
       dataFile.print(",");
       dataFile.print(sun_minusY);
       dataFile.print(",");
-      dataFile.print(S_mag);
-      dataFile.print(",");
       dataFile.print(searching ? 3 : track_mode);
       dataFile.print(",");
       dataFile.print(bright_f);
@@ -1621,7 +1665,13 @@ void sun_tracking_test() {
       dataFile.print(",");
       dataFile.print(angle_since_peak);
       dataFile.print(",");
-      dataFile.println(centered ? 1 : 0);
+      dataFile.print(centered ? 1 : 0);
+      dataFile.print(",");
+      dataFile.print(panel_V, 3);
+      dataFile.print(",");
+      dataFile.print(panel_I_mA, 3);
+      dataFile.print(",");
+      dataFile.println(panel_P_mW, 3);
 
       // Print to USB Serial:
       Serial.print("t:");
@@ -1630,10 +1680,6 @@ void sun_tracking_test() {
       Serial.print(w_RW_cmd);
       Serial.print(",w_meas:");
       Serial.print(w_RW_meas);
-      Serial.print(",V:");
-      Serial.print(panel_V, 3);
-      Serial.print(",I_mA:");
-      Serial.print(panel_I_mA, 3);
       Serial.print(",sDir:");
       Serial.print(sun_direction);
       Serial.print(",err:");
@@ -1655,10 +1701,16 @@ void sun_tracking_test() {
 
       if (test_point_count % 10 == 0) {
         dataFile.flush(); // save file every 10 test points
-        Xbee.print("tp:");
-        Xbee.println(test_point_count);
-        Serial.print("tp:"); // mirror the XBee message to Serial
-        Serial.println(test_point_count);
+      }
+
+      // Live telemetry for the ground station: sun direction, the reading of each of the 4 photo sensors,
+      // and the solar panel voltage (V), current (mA) and power (mW) (Name:value,Name:value)
+      if (test_point_count % TRACK_XBEE_EVERY == 0) {
+        char live[128];
+        snprintf(live, sizeof(live), "sDir:%.1f,s+X:%.0f,s-X:%.0f,s+Y:%.0f,s-Y:%.0f,V:%.2f,I_mA:%.2f,P_mW:%.2f",
+                 sun_direction, sun_plusX, sun_minusX, sun_plusY, sun_minusY, panel_V, panel_I_mA, panel_P_mW);
+        Xbee.println(live);
+        Serial.println(live); // mirror the XBee message to Serial
       }
     }
   }

@@ -82,3 +82,113 @@ We changed:   <your edits>
 Verified:     <hardware test and result; the agent could only syntax-check>
 Issue found:  <did it find the next face? how long did it take?>
 
+## 2026-10-26 · Sun tracking: stuck between the +Y and -X faces
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      shared SunTrack_data038.csv, asked to analyze it and then to make the three fixes
+Agent made:   TRACK_SCAN_PWM and TRACK_SEARCH_PWM 0.15/0.20 -> 0.28; a real-peak rule before SCAN -> HOLD (TRACK_PEAK_MIN_FRACTION, TRACK_PEAK_MIN_RATE_DPS); an I term in HOLD (TRACK_HOLD_KI)
+We changed:   <your edits>
+Verified:     <hardware test and result; the agent could only syntax-check and replay the rule on logged data>
+Issue found:  data038 looped 0 -> 1 -> 2 -> 0 fourteen times in 27 s. Scan (0.15) turned the satellite only ~2 dps, and a 25 count dip at ~300 counts (9% of the brightest face) was taken for the peak. After the change: <did it get through the -X view and stop at the brightest point?>
+
+## 2026-10-28 · Sun tracking simulator (HTML)
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked for an HTML simulation of the control system with editable parameters, a visual of the satellite and Sun, and CSV export, from a photo of the setup and a whiteboard sketch
+Agent made:   Simulation/SunTrackSim.html (PID of command 10, 4-face sun sensor model, wheel deadband and lag, plots, CSV export, overlay of a test CSV)
+We changed:   <your edits, e.g. measured inertias>
+Verified:     <compare against a test run; the agent checked the script parses, ran the physics in Node, and looked at one screenshot>
+Issue found:  <where the simulation and the test disagree>
+
+## 2026-10-28 · Sun position from opposite-face differences
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked to subtract the -X light from +X (and -Y from +Y) so room light does not matter
+Agent made:   sun_dX, sun_dY, sun_signal in read_sun_sensor(); "sun visible" now uses sun_signal instead of the four-face total; three new CSV columns; simulator kept in sync
+We changed:   <your edits>
+Verified:     <hardware test and result; the agent could only syntax-check>
+Issue found:  The direction already used the differences (the division by the total does not change atan2). Later changed: sun_X and sun_Y are now the raw differences in counts (not -1...+1) and sun_signal was removed; visibility uses the four-face total again. The angle is still only 0/90/180/270 when one face is lit. After the change: <what did sun_X and sun_Y read at your stopping point?>
+
+## 2026-10-28 · Live sun direction on the ground station
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked to show the sun direction live on the KestrelSAT interface instead of the data point number
+Agent made:   XBee line "sDir:<deg>,s+X:<counts>,s-X:<counts>,s+Y:<counts>,s-Y:<counts>" 10 times a second (TRACK_XBEE_EVERY) in sun_tracking_test(), mirrored to Serial; replaces the "tp:<n>" counter
+We changed:   <your edits>
+Verified:     <does the GCS show/plot sDir live? any dropped characters?>
+Issue found:  <anything>
+
+## 2026-10-28 · Shorter sun tracking CSV
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked whether all CSV columns are needed; the IV requirement was dropped
+Agent made:   removed panel_V, panel_I (the INA238 is no longer read during the test), sun_X, sun_Y, in_tolerance and S_mag from the SunTrack CSV and the panel V/I from the Serial line
+We changed:   <your edits>
+Verified:     <does the CSV have 19 columns and does the simulator overlay still read it?>
+Issue found:  <anything>
+
+## 2026-10-28 · Scan, hold and search in the simulator
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked to add the scan, hold and search modes to the simulation
+Agent made:   ported the firmware control step into Simulation/SunTrackSim.html (same variable names and constants), a mode plot, mode/brightness columns in the CSV export and overlay, optional gyro noise, TRACK_SIGN choice
+We changed:   <your edits>
+Verified:     <compare the mode plot with a test CSV overlay; the agent ran the logic in Node and looked at one screenshot>
+Issue found:  In the simulation, scan/hold/search ends about 5 deg from the lamp from every start angle tried (PID alone: 32 deg). With a very dim lamp the -X face never reaches TRACK_PEAK_MIN_COUNT, scan never starts and it loops between approach and search at the edge of the view.
+
+
+## 2026-10-30 · Solar panel power back in the sun tracking test
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked to show the IV data on KestrelSAT as power (V x I) and add power, I and V columns to the CSV
+Agent made:   sun_tracking_test() reads the INA238 every sample (same calls as Lab 3), power = panel_V x panel_I_mA (mW); CSV gets panel_V(V), panel_I(mA), panel_P(mW) at the end (22 columns); live XBee line adds ",P_mW:<power>"
+We changed:   <your edits>
+Verified:     <does the build pass? does P_mW go up when the panel faces the lamp? is the current positive or negative?>
+Issue found:  <anything>
+
+## 2026-10-30 · Live panel voltage and current on the ground station
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked to show the volts and current on KestrelSAT as the data is taken
+Agent made:   live XBee/Serial line in sun_tracking_test() now ends ",V:<volts>,I_mA:<mA>,P_mW:<mW>" (was only P_mW); buffer 96 -> 128 bytes
+We changed:   <your edits>
+Verified:     <does the GCS show V and I live? any dropped or garbled characters at 10 lines/s (about 81% of the 9600 baud link)?>
+Issue found:  <anything>
+
+## 2026-10-30 · Stop the scan when the sun error changes sign (less overshoot)
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked how to change the control to have no overshoot, based on SunTrack_data114 (and data099, data104)
+Agent made:   SCAN -> HOLD now also happens when sun_error changes sign (TRACK_STOP_ON_CROSSING 1, TRACK_CROSSING_MAX_ZEROS 3); HOLD returns to the crossing point. Same rule ported to Simulation/SunTrackSim.html. Cause found: the -X reading is flat on top (3705 counts in data114, 4095 in data099), so the 7% drop rule fires 40-70 deg past the lamp
+We changed:   <your edits>
+Verified:     <does mode 2 start when sun_error crosses 0? is the overshoot (largest error on the far side) smaller than data114's 16 deg / data099's 42 deg? does the satellite still end near the lamp?>
+Issue found:  Replayed on the logs (not on hardware): fires in data099 (3.80 s, err 0.3) and data114 (3.25 s, err -0.9), not in data104. In the simulator it only helps when the Y faces read near the middle (half-angle 50: overshoot 25 -> 7-9 deg, final error 4.8 -> 6.0 deg); with a blind zone it never fires and nothing changes. Fully zero overshoot is not possible: braking from about 30 deg/s needs about 3-5 deg.
+
+## 2026-11-03 · Higher Kp, smaller I zone, scan/hold off
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked how to change the PID to have no overshoot, then to apply the change
+Agent made:   definitions.h: TRACK_KP 0.005 -> 0.015, TRACK_KI 0.0005 -> 0.001, TRACK_I_ZONE_DEG 90 -> 20, TRACK_CENTER_ON_PEAK 1 -> 0. Same defaults in Simulation/SunTrackSim.html
+We changed:   <your edits>
+Verified:     <does the largest error on the far side of the lamp stay near 0? does pwm_cmd flip sign back and forth (Kp too high)? is the final error small? how long to get within 10 deg (simulator: 5-6 s)?>
+Issue found:  Simulator only, no hardware test. With the 50 deg sensor (like data099/104/114) overshoot is 0 deg and final error 1.2 deg. With the simulator's default 23 deg sensor (blind zone) PID alone stops 27-32 deg short, so with a dim lamp set TRACK_CENTER_ON_PEAK back to 1 (overshoot about 14 deg). The simulator has no sensor noise or offset. In data104 the sun error read 5-8 deg while the -X face was at its brightest, so the sensor's "center" may be a few degrees off. The sign-change stop rule from the previous commit is still in the code but does nothing while scan is off.
+
+## 2026-11-03 · D term turned off (TRACK_KD = 0)
+Session:      https://claude.ai/code/session_015DKK6MsrrfSyzUeSCWuuyh
+Driver:       <cadet name>
+Reviewers:    <cadet names>
+Prompts:      asked why KestrelSAT stops at the corner in the PID-only run, then asked to make the D term 0
+Agent made:   definitions.h TRACK_KD 0.01 -> 0.0 (the D line stays in main.cpp, it just multiplies by 0). Simulation/SunTrackSim.html default Kd 0.01 -> 0
+We changed:   <your edits>
+Verified:     <does the satellite still stop at the corner? how much does it overshoot with no braking? does pwm_cmd swing? is the largest error on the far side of the lamp small?>
+Issue found:  Cause of the corner stop (from SunTrack no-modes CSV, gyro and video): the sun sensor read 6.8 deg when ~38 deg were left (faces are not cosine-shaped), so P was ~0.1, D braked on the real spin (-0.48 at 0.9 s) and the satellite stopped at ~48 deg of 80 deg turn, then waited ~10 s for the I term. The simulator no-modes CSV had D = 0 all run (Kd 0), which is why it did not stop. Risk with D off: in a scratch simulator with a slower wheel (tau 0.8) Kd 0 overshoots by about 26 deg, and the real wheel is weaker than the simulator's. The sun-sensor error itself is still compressed near the lamp (not fixed).
