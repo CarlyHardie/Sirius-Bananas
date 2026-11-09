@@ -136,6 +136,7 @@ input[type="file"] { display: none; }
     <div class="group" id="g-body"><h2>Satellite and wheel</h2></div>
     <div class="group" id="g-ctrl"><h2>Controller (same units as definitions.h)</h2></div>
     <div class="group" id="g-ic"><h2>Initial conditions and run</h2></div>
+    <div class="group" id="g-panel"><h2>Solar panel (IV prediction)</h2></div>
     <details id="modes">
       <summary>Scan, hold and search (definitions.h)</summary>
       <div class="group" id="g-modes"></div>
@@ -175,6 +176,7 @@ input[type="file"] { display: none; }
     <div class="card plot"><header><h3>Satellite spin rate <span>deg/s</span></h3><span class="readout" id="ro-rate"></span></header><canvas id="p-rate"></canvas><div class="legend" id="lg-rate"></div></div>
     <div class="card plot"><header><h3>Reaction wheel speed <span>RPM</span></h3><span class="readout" id="ro-wheel"></span></header><canvas id="p-wheel"></canvas><div class="legend" id="lg-wheel"></div></div>
     <div class="card plot"><header><h3>Wheel command <span>pwm, −1 to 1</span></h3><span class="readout" id="ro-pwm"></span></header><canvas id="p-pwm"></canvas><div class="legend" id="lg-pwm"></div></div>
+    <div class="card plot"><header><h3>Solar panel power, predicted <span>mW (IV: V = I x load)</span></h3><span class="readout" id="ro-pwr"></span></header><canvas id="p-pwr"></canvas><div class="legend" id="lg-pwr"></div></div>
     <div class="card plot"><header><h3>Mode <span>0 approach · 1 scan · 2 hold · 3 search</span></h3><span class="readout" id="ro-mode"></span></header><canvas id="p-mode" class="short"></canvas><div class="legend" id="lg-mode"></div></div>
     <div class="card plot">
       <div class="data-row">
@@ -203,6 +205,10 @@ const PARAMS = [
   { g: "g-ic", id: "rate0", label: "Initial spin rate", unit: "deg/s", def: 0, min: -360, max: 360, step: 1 },
   { g: "g-ic", id: "runtime", label: "Run time", unit: "s", def: 60, min: 1, max: 600, step: 1 },
   { g: "g-ic", id: "tol", label: "Tolerance", unit: "± deg", def: 45, min: 0.5, max: 180, step: 0.5 },
+  { g: "g-panel", id: "pI0", label: "Panel current facing the lamp", unit: "mA (about 1.14 in the P-only log)", def: 1.14, min: 0, max: 100, step: 0.01 },
+  { g: "g-panel", id: "pIamb", label: "Panel current with no lamp", unit: "mA (room light, about 0.05 in the logs)", def: 0.05, min: 0, max: 10, step: 0.01 },
+  { g: "g-panel", id: "pR", label: "Load resistance", unit: "kΩ (V / I in the logs is about 1.45)", def: 1.45, min: 0.01, max: 1000, step: 0.01 },
+  { g: "g-panel", id: "pM", label: "How fast current falls off with angle", unit: "current ∝ cos^m (m = 1 is a flat panel; about 2.5 fits the logs)", def: 2.5, min: 0.5, max: 10, step: 0.1 },
   { g: "g-modes", id: "center", label: "TRACK_CENTER_ON_PEAK", type: "select", def: "0",
     options: [["1", "1: scan and hold on"], ["0", "0: PID only"]] },
   { g: "g-modes", id: "peakMin", label: "TRACK_PEAK_MIN_COUNT", unit: "counts", def: 100, min: 0, max: 4095, step: 1 },
@@ -282,6 +288,19 @@ function readParams() {
 const D2R = Math.PI / 180, R2D = 180 / Math.PI;
 const wrap180 = (a) => { a = ((a + 180) % 360 + 360) % 360 - 180; return a; };
 const FACE_DIRS = [0, 180, 90, 270]; // +X, -X, +Y, -Y in the firmware's sun_direction frame (-X = panel = 180)
+
+// Solar panel prediction. The panel is on the -X face, so the light hits it at the true offset e (deg).
+// Simple model: current = room-light current + lamp current x cos(angle)^m, zero lamp current if the panel faces away.
+// A flat panel would have m = 1. The logs fit m = 2.5: at the 38 deg the satellite was really off while its sun sensor said 6 deg,
+// the panel made only about 0.5 mW instead of 1.8 mW.
+// The panel feeds a resistor, so voltage = current x resistance and power = voltage x current.
+// (mA x kOhm = V, and V x mA = mW, the same units as panel_V, panel_I and panel_P in the SD log.)
+function panelIV(e, p) {
+  const c = Math.max(0, Math.cos(e * D2R));
+  const I = p.pIamb + (p.pI0 - p.pIamb) * Math.pow(c, p.pM); // mA
+  const V = I * p.pR;                        // V
+  return { V, I, P: V * I };                 // P in mW
+}
 
 // What the 4 sun sensor channels read for a true offset e (deg), and the error the firmware would compute
 function sense(e, p) {
@@ -411,7 +430,9 @@ function simulate(p) {
       pwm = Math.max(-1, Math.min(1, pwm));
       if (!searching && (sun_visible || track_mode !== 0)) last_valid_pwm = pwm;
       target = wheelTarget(pwm, p);
+      const pan = panelIV(e, p);
       rows.push({
+        panV: pan.V, panI: pan.I, panP: pan.P,
         t, meas: sun_error, e, ws, gyro: gyro_Z, ww, target, pwm, P, I, D, wheelAng,
         vis: sun_visible, inTol: sun_visible && Math.abs(sun_error) <= p.tol, c: sens.c,
         mode: searching ? 3 : track_mode, bright_f, bright_max, angle_since_peak, centered,
@@ -448,6 +469,8 @@ function metrics(rows, p) {
   const cen = rows.find((r) => r.centered);
   const peakW = rows.reduce((m, r) => Math.max(m, Math.abs(r.ww)), 0);
   const sat = 100 * rows.filter((r) => Math.abs(r.ww) >= 0.98 * p.wmax).length / n;
+  const avgP = rows.reduce((m, r) => m + r.panP, 0) / n;           // mW
+  const energy = rows.reduce((m, r) => m + r.panP * 0.05, 0);       // mJ (one row every 50 ms)
   return [
     ["First inside ±" + fmt(p.tol, 0) + "° (true)", first ? fmt(first.t, 2) + " s" : "never"],
     ["Time inside tolerance", fmt(pct, 0) + " %"],
@@ -456,6 +479,8 @@ function metrics(rows, p) {
     ["Stopped at brightest −X", cen ? fmt(cen.t, 2) + " s" : "never"],
     ["Peak wheel speed", fmt(peakW, 0) + " RPM"],
     ["Wheel at max speed", fmt(sat, 0) + " % of run"],
+    ["Predicted panel power, average", fmt(avgP, 2) + " mW"],
+    ["Predicted energy collected", fmt(energy, 1) + " mJ"],
   ];
 }
 function fmt(v, d) { const r = Math.round(v * 10 ** d) / 10 ** d; return (r === 0 ? 0 : r).toFixed(d).replace(/^-/, "−"); }
@@ -591,6 +616,7 @@ const PLOTS = [
   { cv: "p-rate", ro: "ro-rate", lg: "lg-rate", unit: " deg/s", dec: 1, sim: [{ key: "gyro", label: "Sim", color: "--series-sim" }], expKey: "rate" },
   { cv: "p-wheel", ro: "ro-wheel", lg: "lg-wheel", unit: " RPM", dec: 0, limit: true, sim: [{ key: "ww", label: "Sim", color: "--series-sim" }], expKey: "wheel" },
   { cv: "p-pwm", ro: "ro-pwm", lg: "lg-pwm", unit: "", dec: 3, sim: [{ key: "pwm", label: "Sim", color: "--series-sim" }], expKey: "pwm" },
+  { cv: "p-pwr", ro: "ro-pwr", lg: "lg-pwr", unit: " mW", dec: 2, sim: [{ key: "panP", label: "Sim, predicted", color: "--series-sim" }], expKey: "pwr" },
   { cv: "p-mode", ro: "ro-mode", lg: "lg-mode", unit: "", dec: 0, fixed: [0, 3], sim: [{ key: "mode", label: "Sim", color: "--series-sim" }], expKey: "mode" },
 ];
 function niceTicks(lo, hi, count) {
@@ -745,13 +771,14 @@ for (const pl of PLOTS) {
 
 // ---------------------------------------------------------------- CSV export
 function toCsv() {
-  const head = "time(s),sun_error(deg),true_offset(deg),gyro_Z(dps),w_RW_meas(RPM),w_RW_target(RPM),pwm_cmd,p_term,i_term,d_term,in_tolerance,sun_visible,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count),mode,bright_f(count),bright_max(count),angle_since_peak(deg),centered";
+  const head = "time(s),sun_error(deg),true_offset(deg),gyro_Z(dps),w_RW_meas(RPM),w_RW_target(RPM),pwm_cmd,p_term,i_term,d_term,in_tolerance,sun_visible,sun_plusX(count),sun_minusX(count),sun_plusY(count),sun_minusY(count),mode,bright_f(count),bright_max(count),angle_since_peak(deg),centered,panel_V(V),panel_I(mA),panel_P(mW)";
   const lines = [head];
   for (const r of rows) {
     lines.push([r.t.toFixed(3), r.meas.toFixed(3), r.e.toFixed(3), r.gyro.toFixed(3), r.ww.toFixed(2), r.target.toFixed(2),
       r.pwm.toFixed(4), r.P.toFixed(4), r.I.toFixed(4), r.D.toFixed(4), r.inTol ? 1 : 0, r.vis ? 1 : 0,
       r.c[0].toFixed(0), r.c[1].toFixed(0), r.c[2].toFixed(0), r.c[3].toFixed(0),
-      r.mode, r.bright_f.toFixed(1), r.bright_max.toFixed(1), r.angle_since_peak.toFixed(2), r.centered ? 1 : 0].join(","));
+      r.mode, r.bright_f.toFixed(1), r.bright_max.toFixed(1), r.angle_since_peak.toFixed(2), r.centered ? 1 : 0,
+      r.panV.toFixed(3), r.panI.toFixed(3), r.panP.toFixed(3)].join(","));
   }
   return lines.join("\n") + "\n";
 }
@@ -810,15 +837,15 @@ function parseTest(text) {
   const ti = col(/^mcu time\(ms\)$|^time\(s\)$/i);
   if (ti < 0) throw new Error("No 'mcu time(ms)' or 'time(s)' column found.");
   const inMs = /ms/i.test(head[ti]);
-  const idx = { err: col(/^sun_error/i), rate: col(/^gyro_Z/i), wheel: col(/^w_RW_meas/i), pwm: col(/^pwm_cmd/i), mode: col(/^mode$/i) };
-  const out = { t: [], err: [], rate: [], wheel: [], pwm: [], mode: [] };
+  const idx = { err: col(/^sun_error/i), rate: col(/^gyro_Z/i), wheel: col(/^w_RW_meas/i), pwm: col(/^pwm_cmd/i), mode: col(/^mode$/i), pwr: col(/^panel_P/i) };
+  const out = { t: [], err: [], rate: [], wheel: [], pwm: [], mode: [], pwr: [] };
   let t0 = null;
   for (const l of lines.slice(hIdx + 1)) {
     const c = l.split(",");
     const tv = parseFloat(c[ti]); if (!Number.isFinite(tv)) continue;
     if (t0 == null) t0 = tv;
     out.t.push(inMs ? (tv - t0) / 1000 : tv - t0);
-    for (const k of ["err", "rate", "wheel", "pwm", "mode"]) out[k].push(idx[k] >= 0 ? parseFloat(c[idx[k]]) : NaN);
+    for (const k of ["err", "rate", "wheel", "pwm", "mode", "pwr"]) out[k].push(idx[k] >= 0 ? parseFloat(c[idx[k]]) : NaN);
   }
   if (out.t.length < 2) throw new Error("No data rows found in that file.");
   return out;
